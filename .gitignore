@@ -1,0 +1,10 @@
+# Large source/intermediate data behind each dataset's clean train/val/test
+# files and README.md. See each dataset's raw/<name>/README.md for how to
+# regenerate it.
+raw/
+
+.venv/
+__pycache__/
+
+.DS_Store
+.claude/settings.local.json
