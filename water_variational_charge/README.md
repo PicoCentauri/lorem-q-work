@@ -38,11 +38,10 @@ RMSE, per charge state.
 charge state, using the test or validation set. This averages over many
 different clusters rather than tracking one cluster continuously.
 
-**Exp. 2 — single-cluster dissociation curve (Fig. 2 style).** Not possible
-with this dataset — no cluster appears at more than one or two scaling
-factors here. To build this test case: pick one structure per charge state,
-scale it through 0.9×–5.0×, and compute energy and forces at each point
-(FHI-aims, PBE0, tight settings).
+**Exp. 3 — single-cluster dissociation curve.** Use
+`water_variational_charge_dissociation_curves.xyz` — 17 clusters (4 neutral, 4 cation, 9
+anion), each scaled through the full 0.9×–5.0× range (16 points), Group by the `series`
+field.
 
 ## How to read the data
 
