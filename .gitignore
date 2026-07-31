@@ -8,3 +8,13 @@ __pycache__/
 
 .DS_Store
 .claude/settings.local.json
+
+*.log
+
+# Per-experiment generated artifacts: prepared marathon datasets (rebuild
+# with each experiment's prepare.py) and training run outputs (checkpoints,
+# logs -- rebuild by rerunning lorem-train). Configs (model.yaml,
+# settings.yaml, prepare.py, README.md) stay tracked.
+experiments/*/data/
+experiments/*/*/run/
+experiments/*/evaluate_rows.json

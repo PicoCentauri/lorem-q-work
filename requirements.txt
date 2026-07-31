@@ -1,0 +1,10 @@
+# Minimal, hand-maintained dependency list (not a pip freeze) -- see README.
+
+-e ../lorem-jax
+jax[cuda12]
+matplotlib
+mpltex  # publication-styled figure sizing/formatting
+
+# lorem-jax depends on jax-pme via git (lab-cosmo/jax-pme, main branch), not
+# a versioned PyPI release; listed here explicitly for visibility.
+jax-pme @ git+https://github.com/lab-cosmo/jax-pme.git

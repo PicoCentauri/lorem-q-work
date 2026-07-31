@@ -1,7 +1,12 @@
 # lorem-q
 
-Datasets for testing and benchmarking models that are aware of total charge
-and an external electric field.
+Datasets and experiments for testing and benchmarking models that are aware
+of total charge and an external electric field.
+
+## Layout
+
+- `datasets/` -- the reference datasets
+- `experiments/` -- training runs against those datasets
 
 ## How to use
 
@@ -11,13 +16,15 @@ You can add file types to be stored in LFS by editing `.gitattributes`.
 
 ## Datasets
 
-The datasets are extracted from various sources, each described in its own
-`README.md`. Data is stored as ASE extxyz.
+- [`ag_clusters`](./datasets/ag_clusters): Charged Ag₃ clusters isolating long-range charge-transfer effects.
+- [`beastdb`](./datasets/beastdb): Electrocatalyst surfaces at fixed potential and fixed charge.
+- [`omol_10K`](./datasets/omol_10K): Small, closed-shell, charge-diverse subset of OMol25.
+- [`razor`](./datasets/razor): Pt-water interfaces with fixed charge labels.
+- [`water_external_field`](./datasets/water_external_field): Water clusters under randomly oriented external electric fields.
+- [`water_slab`](./datasets/water_slab): Periodic water slab polarized by a z-axis field.
+- [`water_variational_charge`](./datasets/water_variational_charge): Water clusters at neutral, protonated, deprotonated charge states.
 
-- [`Ag_clusters`](./Ag_clusters): Charged Ag₃ clusters isolating long-range charge-transfer effects.
-- [`beastdb`](./beastdb): Electrocatalyst surfaces at fixed potential and fixed charge.
-- [`omol_10K`](./omol_10K): Small, closed-shell, charge-diverse subset of OMol25.
-- [`razor`](./razor): Pt-water interfaces with fixed charge labels.
-- [`water_external_field`](./water_external_field): Water clusters under randomly oriented external electric fields.
-- [`water_slab`](./water_slab): Periodic water slab polarized by a z-axis field.
-- [`water_variational_charge`](./water_variational_charge): Water clusters at neutral, protonated, deprotonated charge states.
+## Experiments
+
+- [`ag_clusters`](./experiments/ag_clusters): `Lorem` charge-conditioning ablation (`none`/`film`/`latent`) on the `ag_clusters` dataset.
+- [`water_variational_charge`](./experiments/water_variational_charge): `Lorem` charge-conditioning (`film`/`latent`) crossed with long-range (`lr` on/off) on the `water_variational_charge` dataset.
