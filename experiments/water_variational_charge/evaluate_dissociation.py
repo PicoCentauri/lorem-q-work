@@ -5,7 +5,7 @@
 plots relative energy per atom (referenced to that series' own 1.0x point)
 vs. scaling factor: DFT as points, each trained variant as a line.
 
-Run from experiments/water_variational_charge/ after all four variants have
+Run from experiments/water_variational_charge/ after both variants have
 been trained:
 
     DATASETS=. python evaluate_dissociation.py
@@ -29,19 +29,13 @@ from ase.io import read
 from marathon.grain import Record, RecordMetadata
 from marathon.io import from_dict, read_msgpack, read_yaml
 
-VARIANTS = ["film_lr", "film_sr", "latent_lr", "latent_sr"]
+VARIANTS = ["sr", "lr"]
 CHECKPOINT = "R2_E+F"
 DATA_FILE = "../../datasets/water_variational_charge/water_variational_charge_dissociation_curves.xyz"
 BATCH_SIZE = 64
 
-COLORS = {"film": "steelblue", "latent": "tomato"}
-LINESTYLES = {"lr": "-", "sr": "--"}
+COLORS = {"sr": "steelblue", "lr": "tomato"}
 CHARGE_ORDER = {-1.0: 0, 0.0: 1, 1.0: 2}
-
-
-def variant_style(name):
-    cc, band = name.rsplit("_", 1)
-    return COLORS[cc], LINESTYLES[band]
 
 
 def load_checkpoint(variant):
@@ -124,10 +118,9 @@ def plot_curves(frames, series_indices, dft_energy, all_model_energies, name="ex
         ax.scatter(exp_coefs, dft_rel, color="black", s=8, zorder=5, label="DFT")
 
         for v in VARIANTS:
-            color, ls = variant_style(v)
             e = all_model_energies[v]
             model_rel = [(e[i] - e[ref_i]) / n_atoms * 1000 for i in idxs]
-            ax.plot(exp_coefs, model_rel, color=color, ls=ls, label=v)
+            ax.plot(exp_coefs, model_rel, color=COLORS[v], label=v)
 
         c = int(frames[idxs[0]].info["tot_charge"])
         ax.set_title(f"{s} (Q={c:+d})", fontsize=6)

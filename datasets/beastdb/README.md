@@ -1,6 +1,6 @@
 # beastdb
 
-Grand-canonical DFT database of electrocatalyst surfaces, computed at both
+Grand-canonical DFT database of relaxed electrocatalyst surfaces, computed at both
 fixed applied potential and fixed charge. Most structures carry an explicit
 potential alongside the resulting non-integer DFT charge response — a
 genuinely potential/charge-resolved training signal, not a single neutral
@@ -14,14 +14,14 @@ Phys. Chem. C* **128**, 20165 (2024).
 
 ## Computational details
 
-Grand-canonical DFT (GC-DFT) computed with JDFTx in implicit solvent
-(CANDLE/LinearPCM). Covers four material spaces — single-metal-atom N-doped
-graphene, flat/stepped pure metal surfaces, binary covalent alloys, and
-bimetallic single-atom alloys — across CO2R, OER/ORR, HER/HOR, and NRR
-reaction pathways, spanning 50 elements. Periodic slabs, `pbc="T T F"`
-(JDFTx explicitly truncates the Coulomb interaction along the surface
-normal). Per-atom `charges` are DDEC6 partial charges; only relaxed-geometry
-energies and charges are reported, no forces.
+Grand-canonical DFT (GC-DFT) computed with JDFTx in implicit solvent (CANDLE/LinearPCM).
+Covers four material spaces — single-metal-atom N-doped graphene, flat/stepped pure
+metal surfaces, binary covalent alloys, and bimetallic single-atom alloys — across CO2R,
+OER/ORR, HER/HOR, and NRR reaction pathways, spanning 50 elements. Periodic slabs,
+`pbc="T T F"` (JDFTx explicitly truncates the Coulomb interaction along the surface
+normal). Per-atom `charges` are DDEC6 partial charges; only relaxed-geometry energies
+and charges are reported, no forces. All structures are relaxed to an unknown  force
+tolerance.
 
 84% of structures are GC-DFT at fixed applied potential (`applied_potential`,
 V vs. SHE, ~10 discrete values from -1 to 1.8 V), with `net_charge_state`

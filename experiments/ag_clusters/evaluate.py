@@ -1,9 +1,13 @@
-"""Energy/force error, grouped by charge state, for the three ag_clusters
-charge-conditioning variants (none/film/latent). Loads each trained
+"""Energy/force error, grouped by charge state, for the ag_clusters sr vs lr
+variants, plus sr-energyonly (loss_weights={"energy": 1.0}, no force
+supervision) as a reference-quality check -- the published Ag3+/Ag3-
+errors (Ko, Finkler, Goedecker & Behler, Nat. Commun. 12, 398 (2021)) may
+be from an energy-only fit, so this isolates whether joint E+F training is
+what's holding sr/lr back from that reference accuracy. Loads each trained
 checkpoint directly (model + params + per-species baseline) and evaluates
 in batches on the held-out test set.
 
-Run from experiments/ag_clusters/ after all three variants have been trained:
+Run from experiments/ag_clusters/ after all variants have been trained:
 
     DATASETS=. python evaluate.py
 """
@@ -27,17 +31,25 @@ from ase.io import read
 from marathon.grain import Record, RecordMetadata
 from marathon.io import from_dict, read_msgpack, read_yaml
 
-VARIANTS = ["none", "film", "latent"]
-CHECKPOINT = "R2_E+F"
+VARIANTS = ["sr", "lr", "sr-energyonly"]
 TEST_FILE = "../../datasets/ag_clusters/Ag_clusters_test.xyz"
 CHARGE_STATES = [-1.0, 1.0]
 CHARGE_LABELS = {-1.0: "Ag3-", 1.0: "Ag3+"}
 
-COLORS = {"none": "gray", "film": "steelblue", "latent": "tomato"}
+# sr/lr train on energy+forces, so their combined-metric checkpoint is
+# named "R2_E+F"; sr-energyonly trains on energy only
+# (loss_weights={"energy": 1.0}), so its best checkpoint is "R2_E" instead.
+CHECKPOINTS = {
+    "sr": "R2_E+F",
+    "lr": "R2_E+F",
+    "sr-energyonly": "R2_E",
+}
+
+COLORS = {"sr": "steelblue", "lr": "tomato", "sr-energyonly": "seagreen"}
 
 BATCH_SIZE = 64
 
-# None = full test set (1101 structures x 3 models); set to an int for a
+# None = full test set (1101 structures x 2 models); set to an int for a
 # quick smoke test before committing to the full evaluation.
 SAMPLE_SIZE = None
 
@@ -52,7 +64,7 @@ def load_test_atoms(n=None):
 
 
 def load_checkpoint(variant):
-    folder = Path(variant) / "run" / "checkpoints" / CHECKPOINT / "model"
+    folder = Path(variant) / "run" / "checkpoints" / CHECKPOINTS[variant] / "model"
     model = from_dict(read_yaml(folder / "model.yaml"))
     params = read_msgpack(folder / "model.msgpack")
     species_weights = read_yaml(folder / "baseline.yaml")["elemental"]
@@ -155,12 +167,12 @@ def print_table(agg):
 def plot_bars(agg, name="error_by_charge_state.pdf"):
     plt.rcParams["text.usetex"] = False  # no LaTeX install on this machine
     x = np.arange(len(CHARGE_STATES))
-    width = 0.25
+    width = 0.8 / len(VARIANTS)
 
     fig, axes = plt.subplots(1, 2)
     fig.set_figwidth(1.8 * fig.get_figwidth())
     for i, v in enumerate(VARIANTS):
-        offset = (i - 1) * width
+        offset = (i - (len(VARIANTS) - 1) / 2) * width
         e_vals = [agg[(v, c)]["e_mae"] for c in CHARGE_STATES]
         f_vals = [agg[(v, c)]["f_mae"] for c in CHARGE_STATES]
         axes[0].bar(x + offset, e_vals, width, label=v, color=COLORS[v])

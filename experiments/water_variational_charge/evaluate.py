@@ -1,11 +1,11 @@
 """Exp 1 (mixed charge states near equilibrium) and Exp 2 (dissociation,
-binned by exp_coef) for the four water_variational_charge charge-conditioning
-variants. Loads each trained checkpoint directly (model + params + per-species
+binned by exp_coef) for the water_variational_charge sr vs lr variants.
+Loads each trained checkpoint directly (model + params + per-species
 baseline) and evaluates in batches -- not via the per-structure ASE Calculator
 interface, which triggers a fresh XLA compile per distinct padded shape and
 blows up GPU memory across ~15k structures of varying size.
 
-Run from experiments/water_variational_charge/ after all four variants have
+Run from experiments/water_variational_charge/ after both variants have
 been trained:
 
     DATASETS=. python evaluate.py
@@ -30,28 +30,20 @@ from ase.io import read
 from marathon.grain import Record, RecordMetadata
 from marathon.io import from_dict, read_msgpack, read_yaml
 
-VARIANTS = ["film_lr", "film_sr", "latent_lr", "latent_sr"]
+VARIANTS = ["sr", "lr"]
 CHECKPOINT = "R2_E+F"
 TEST_FILE = "../../datasets/water_variational_charge/water_variational_charge_test.xyz"
 EXP_COEF_BINS = np.array([1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0])
 CHARGE_STATES = [-1.0, 0.0, 1.0]
 CHARGE_LABELS = {-1.0: "Q=-1", 0.0: "Q=0", 1.0: "Q=+1"}
 
-# color = charge_conditioning (identity), linestyle/hatch = lr vs. sr
-COLORS = {"film": "steelblue", "latent": "tomato"}
-LINESTYLES = {"lr": "-", "sr": "--"}
-HATCHES = {"lr": "", "sr": "///"}
+COLORS = {"sr": "steelblue", "lr": "tomato"}
 
 BATCH_SIZE = 64
 
-# None = full test set (15,000 structures x 4 models); set to an int for a
+# None = full test set (15,000 structures x 2 models); set to an int for a
 # quick smoke test before committing to the full evaluation.
 SAMPLE_SIZE = None
-
-
-def variant_style(name):
-    cc, band = name.rsplit("_", 1)
-    return COLORS[cc], LINESTYLES[band], HATCHES[band]
 
 
 def nearest_bin(x, bins=EXP_COEF_BINS):
@@ -176,23 +168,16 @@ def print_exp1_table(agg1):
 def plot_exp1(agg1, name="exp1_charge_states.pdf"):
     plt.rcParams["text.usetex"] = False  # no LaTeX install on this machine
     x = np.arange(len(CHARGE_STATES))
-    width = 0.18
+    width = 0.35
 
     fig, axes = plt.subplots(1, 2)
     fig.set_figwidth(1.8 * fig.get_figwidth())
     for i, v in enumerate(VARIANTS):
-        color, _, hatch = variant_style(v)
-        offset = (i - 1.5) * width
+        offset = (i - 0.5) * width
         e_vals = [agg1[(v, c)]["e_mae"] for c in CHARGE_STATES]
         f_vals = [agg1[(v, c)]["f_mae"] for c in CHARGE_STATES]
-        axes[0].bar(
-            x + offset, e_vals, width, label=v, color=color, hatch=hatch,
-            edgecolor="white", linewidth=0.5, zorder=3,
-        )
-        axes[1].bar(
-            x + offset, f_vals, width, label=v, color=color, hatch=hatch,
-            edgecolor="white", linewidth=0.5, zorder=3,
-        )
+        axes[0].bar(x + offset, e_vals, width, label=v, color=COLORS[v])
+        axes[1].bar(x + offset, f_vals, width, label=v, color=COLORS[v])
 
     titles = ["Exp 1 -- energy", "Exp 1 -- forces"]
     ylabels = ["Energy MAE (meV/atom)", "Force MAE (meV/A)"]
@@ -217,7 +202,6 @@ def plot_exp2(agg2, name="exp2_dissociation.pdf"):
 
     for col, c in enumerate(CHARGE_STATES):
         for v in VARIANTS:
-            color, ls, _ = variant_style(v)
             xs, e_ys, f_ys = [], [], []
             for b in EXP_COEF_BINS:
                 key = (v, c, b)
@@ -225,8 +209,8 @@ def plot_exp2(agg2, name="exp2_dissociation.pdf"):
                     xs.append(b)
                     e_ys.append(agg2[key]["e_mae"])
                     f_ys.append(agg2[key]["f_mae"])
-            axes[0, col].plot(xs, e_ys, color=color, ls=ls, marker="o", label=v)
-            axes[1, col].plot(xs, f_ys, color=color, ls=ls, marker="o", label=v)
+            axes[0, col].plot(xs, e_ys, color=COLORS[v], marker="o", label=v)
+            axes[1, col].plot(xs, f_ys, color=COLORS[v], marker="o", label=v)
         axes[0, col].set_title(CHARGE_LABELS[c])
         axes[1, col].set_xlabel("expansion coefficient")
 

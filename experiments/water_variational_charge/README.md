@@ -1,41 +1,44 @@
 # water_variational_charge charge conditioning
 
-Trains `Lorem` on `../../datasets/water_variational_charge/` with
-`charge_conditioning` in `{"film", "latent"}` crossed with `lr` in
-`{true, false}` -- four variants total (`film_lr`, `film_sr`, `latent_lr`,
-`latent_sr`; `sr` = short-range only, `lr` = Ewald long-range on). Unlike
+Trains `Lorem` (which always conditions on total charge Q via FiLM, no
+config option needed) on `../../datasets/water_variational_charge/` crossed
+with `lr` in `{true, false}` -- `sr` and `lr`, `num_features=512`. Unlike
 `ag_clusters`, this dataset is specifically designed to push clusters apart
 beyond any reasonable cutoff (0.9x-5.0x isotropic expansion), so the `lr`
 flag is the interesting axis here: does the long-range channel let the
-model track dissociation the way a purely local model (`*_sr`) can't?
+model track dissociation the way a purely local model (`sr`) can't?
 
 ## Layout
 
 - `data/` -- prepared marathon datasets (`train`/`valid`/`test`), built by
   `prepare.py` from `../../datasets/water_variational_charge/*.xyz`.
   `tot_charge` is renamed to `total_charge`, matching the key
-  `lorem/batching.py` reads for the model's Q input.
-- `film_lr/`, `film_sr/`, `latent_lr/`, `latent_sr/` -- one experiment
-  dir per (charge_conditioning, lr) combination.
-- `evaluate.py` -- loads all four trained checkpoints directly (model +
-  params + per-species baseline, batched through the same `to_sample`/
-  `to_batch` pipeline training uses -- not the per-structure ASE Calculator,
-  which triggers a fresh XLA compile per distinct padded shape and blows up
-  GPU memory across ~15k structures of varying size) and runs the two
-  physical test cases below against the held-out test set, saving plots to
-  `figures/`.
+  `lorem/batching.py` reads for the model's Q input. Run locally and synced
+  to the cluster, rather than re-run per job.
+- `sr/`, `lr/` -- one experiment dir per `lr` setting, each with its own
+  `srun.sh` (2h wall-clock cap, `a100` for `sr`, `a100_80` for `lr` -- the
+  Ewald k-space work needs more memory).
+- `evaluate.py` / `evaluate_dissociation.py` -- load both trained
+  checkpoints directly (model + params + per-species baseline, batched
+  through the same `to_sample`/`to_batch` pipeline training uses -- not the
+  per-structure ASE Calculator, which triggers a fresh XLA compile per
+  distinct padded shape and blows up GPU memory across ~15k structures of
+  varying size) and run the physical test cases below against the held-out
+  test set, saving plots to `figures/`.
+- `srun.sh` (top level) -- separate SLURM job that runs both evaluation
+  scripts; submit once both training jobs have finished.
 
 ## Running
 
 ```bash
-# prepare data (shared by all four variants)
+# prepare data locally (shared by both variants), then sync to the cluster
 DATASETS=. python prepare.py
 
-# run a variant
-cd film_lr && DATASETS=.. lorem-train
+# on the cluster: submit both training jobs (run in parallel)
+cd sr && sbatch srun.sh && cd ../lr && sbatch srun.sh
 
-# once all four are trained
-python evaluate.py
+# once both have finished, evaluate
+cd .. && sbatch srun.sh
 ```
 
 ## Physical test cases
