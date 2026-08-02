@@ -29,11 +29,11 @@ structures.
 
 ## Physical test cases
 
-**Perturbed vs. field-free MAE — this works today.**
+**Exp 1: Perturbed vs. field-free MAE — this works today.**
 Split into field-free (`ext_field` key) and perturbed
 groups and compare energy/force error between them.
 
-**Matched field-free/field-on pairs.** For a stricter same-geometry test,
+**Exp 2: Matched field-free/field-on pairs.** For a stricter same-geometry test,
 use `water_external_field_paired_free.xyz` and
 `water_external_field_paired_perturbed.xyz` — they line up 1:1, same
 geometries, same order, index by index. Compare each field-free structure
@@ -42,11 +42,14 @@ directly against its field-on counterpart. These two files overlap with
 original paired order here instead of being reshuffled), so use them only
 for this specific test, not as extra training data.
 
-**Field-magnitude sweep (Fig. 5 style).** Not possible with this dataset —
-each geometry here has exactly one field value, not a range. To build this
-test case: pick one geometry and one field direction, then compute energy
-and forces across several field magnitudes (FHI-aims, PBE0, tight settings).
-Compare the resulting E(ε) curve to DFT — QEq predicts an exact parabola.
+**Exp 3: Field-magnitude sweep.** Use
+`water_external_field_magnitude_sweep.xyz` — 50 neutral clusters (4–11
+water molecules), each held at a fixed geometry and swept through 21 field
+magnitudes from −0.2 to 0.2 V/Å (0.02 step) along a fixed direction (the
+z-axis). Group by the `series` field and sort by `field_magnitude` to trace
+out E(ε) per cluster, following Fig. 5 of the paper. Compare the resulting
+curve to DFT — QEq predicts an exact parabola, but the paper finds the
+QEq-based MLIP gets the shape wrong.
 
 ## How to read the data
 
@@ -59,4 +62,13 @@ forces = atoms.arrays["forces"]        # eV/Å
 charges = atoms.arrays["charges"]      # Hirshfeld, per atom
 energy = atoms.info["energy"]          # eV
 ext_field = atoms.info["ext_field"]    # V/Å, xyz vector
+```
+
+For the field-magnitude sweep, group by `series` (one per cluster) and sort
+by `field_magnitude` (V/Å, signed component along the fixed field direction):
+
+```python
+frames = read("water_external_field/water_external_field_magnitude_sweep.xyz", index=":")
+cluster = [a for a in frames if a.info["series"] == "STRUC000"]
+cluster.sort(key=lambda a: a.info["field_magnitude"])
 ```

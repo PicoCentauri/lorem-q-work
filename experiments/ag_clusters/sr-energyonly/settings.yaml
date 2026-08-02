@@ -2,22 +2,25 @@ train: "data/train"
 valid: "data/valid"
 test_datasets:
   test: ["data/test", true]
-seed: 23
+seed: 42
 batcher:
   batch_size: 64
   coarse_strategy: powers_of_4
   size_strategy: powers_of_4
   fine_strategy: powers_of_4
-loss_weights: {"energy": 1.0}
+loss_weights: {"energy": 1000.0, "forces": 1.0}
+scale_by_variance: False
+correct_mean: True
 checkpointers: full
-optimizer: muon
-valid_every_epoch: 5
-decay_style: warmup_cosine
-warmup_epochs: 10
-start_learning_rate: 2e-4
-gradient_clip: 1.0
-max_epochs: 1000
+optimizer: adam
+valid_every_epoch: 2
+decay_style: linear
+start_decay_after: 10
+start_learning_rate: 4e-4
+min_learning_rate: 1e-6
+max_epochs: 4000
 benchmark_pipeline: True
 use_wandb: False
 default_matmul_precision: "float32"
 worker_count: 16
+worker_buffer_size: 2

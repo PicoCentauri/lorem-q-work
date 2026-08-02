@@ -1,11 +1,12 @@
 """Energy/force error, grouped by charge state, for the ag_clusters sr vs lr
-variants, plus sr-energyonly (loss_weights={"energy": 1.0}, no force
-supervision) as a reference-quality check -- the published Ag3+/Ag3-
-errors (Ko, Finkler, Goedecker & Behler, Nat. Commun. 12, 398 (2021)) may
-be from an energy-only fit, so this isolates whether joint E+F training is
-what's holding sr/lr back from that reference accuracy. Loads each trained
-checkpoint directly (model + params + per-species baseline) and evaluates
-in batches on the held-out test set.
+variants, plus sr-energyonly as a reference-quality check against the
+published Ag3+/Ag3- errors (Ko, Finkler, Goedecker & Behler, Nat. Commun.
+12, 398 (2021)): heavily energy-weighted joint training
+(loss_weights={"energy": 1000.0, "forces": 1.0}, adam, max_degree=6, see
+sr-energyonly/settings.yaml for the full tuned recipe), rather than the
+0.5/0.5 split sr/lr use. Loads each trained checkpoint directly (model +
+params + per-species baseline) and evaluates in batches on the held-out
+test set.
 
 Run from experiments/ag_clusters/ after all variants have been trained:
 
@@ -36,13 +37,14 @@ TEST_FILE = "../../datasets/ag_clusters/Ag_clusters_test.xyz"
 CHARGE_STATES = [-1.0, 1.0]
 CHARGE_LABELS = {-1.0: "Ag3-", 1.0: "Ag3+"}
 
-# sr/lr train on energy+forces, so their combined-metric checkpoint is
-# named "R2_E+F"; sr-energyonly trains on energy only
-# (loss_weights={"energy": 1.0}), so its best checkpoint is "R2_E" instead.
+# sr/lr/sr-energyonly all train on energy+forces (sr-energyonly heavily
+# energy-weighted, loss_weights={"energy": 1000.0, "forces": 1.0}, but
+# forces are still a tracked key), so all three land on the combined-metric
+# checkpoint "R2_E+F".
 CHECKPOINTS = {
     "sr": "R2_E+F",
     "lr": "R2_E+F",
-    "sr-energyonly": "R2_E",
+    "sr-energyonly": "R2_E+F",
 }
 
 COLORS = {"sr": "steelblue", "lr": "tomato", "sr-energyonly": "seagreen"}

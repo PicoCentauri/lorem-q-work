@@ -40,3 +40,4 @@
 | 2026-08-01 20:27 | alex | experiments/omol_10K/lr | 3939991 | omol_10K-lr | RUNNING |
 | 2026-08-01 20:27 | alex | experiments/omol_10K/sr | 3939992 | omol_10K-sr | RUNNING |
 | 2026-08-01 20:36 | alex | experiments/ag_clusters/sr-energyonly | 3940018 | ag_clusters-sr-energyonly | SUBMITTED |
+| 2026-08-01 21:12 | alex | experiments/ag_clusters/sr-energyonly | 3940061 | ag_clusters-sr-energyonly | SUBMITTED |
