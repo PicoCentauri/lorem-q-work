@@ -1,7 +1,5 @@
-"""Energy/force error, grouped by OMol25 domain (biomolecules, electrolytes,
-metal_complexes, neutral_organics -- see ../../raw/omol_small/README.md and
-omol_xyz.py for how the domain-balanced test split was built), for the
-omol_10K sr vs lr variants. Loads each trained checkpoint directly
+"""Energy/force error, grouped by total charge, for the omol_10K film_sr vs
+film_lr charge-conditioning variants. Loads each trained checkpoint directly
 (model + params + per-species baseline) and evaluates in batches on the
 held-out test set.
 
@@ -29,12 +27,11 @@ from ase.io import read
 from marathon.grain import Record, RecordMetadata
 from marathon.io import from_dict, read_msgpack, read_yaml
 
-VARIANTS = ["sr", "lr"]
+VARIANTS = ["film_sr", "film_lr"]
 CHECKPOINT = "R2_E+F"
 TEST_FILE = "../../datasets/omol_10K/omol_small_test.xyz"
-DOMAINS = ["biomolecules", "electrolytes", "metal_complexes", "neutral_organics"]
 
-COLORS = {"sr": "steelblue", "lr": "tomato"}
+COLORS = {"film_sr": "steelblue", "film_lr": "tomato"}
 
 BATCH_SIZE = 32
 
@@ -103,7 +100,6 @@ def evaluate_variant(model, params, species_weights, frames):
             f_ref = atoms.get_forces()
             n_atoms = len(atoms)
             q = atoms.info["total_charge"]
-            domain = atoms.info["domain"]
 
             e_err = (e_pred_i - e_ref) / n_atoms * 1000  # meV/atom
             f_err = (f_pred_i - f_ref) * 1000  # meV/A
@@ -111,7 +107,6 @@ def evaluate_variant(model, params, species_weights, frames):
             rows.append(
                 {
                     "tot_charge": float(q),
-                    "domain": domain,
                     "e_abs_err": float(abs(e_err)),
                     "e_sq_err": float(e_err**2),
                     "f_abs_err": float(np.mean(np.abs(f_err))),
@@ -140,32 +135,32 @@ def aggregate(rows, keys):
     return result
 
 
-def print_table(agg):
-    print("\nEnergy/force error by OMol25 domain")
-    print(f"{'variant':<10}{'domain':<18}{'E MAE':>10}{'E RMSE':>10}{'F MAE':>10}{'F RMSE':>10}{'n':>8}")
+def print_table(agg, charge_states):
+    print("\nEnergy/force error by total charge")
+    print(f"{'variant':<10}{'charge':>8}{'E MAE':>10}{'E RMSE':>10}{'F MAE':>10}{'F RMSE':>10}{'n':>8}")
     for v in VARIANTS:
-        for d in DOMAINS:
-            if (v, d) not in agg:
+        for c in charge_states:
+            if (v, c) not in agg:
                 continue
-            m = agg[(v, d)]
+            m = agg[(v, c)]
             print(
-                f"{v:<10}{d:<18}{m['e_mae']:>10.3f}{m['e_rmse']:>10.3f}"
+                f"{v:<10}{c:>8.0f}{m['e_mae']:>10.3f}{m['e_rmse']:>10.3f}"
                 f"{m['f_mae']:>10.3f}{m['f_rmse']:>10.3f}{m['n']:>8d}"
             )
 
 
 @mpltex.acs_decorator
-def plot_bars(agg, name="error_by_domain.pdf"):
+def plot_bars(agg, charge_states, name="error_by_charge_state.pdf"):
     plt.rcParams["text.usetex"] = False  # no LaTeX install on this machine
-    x = np.arange(len(DOMAINS))
+    x = np.arange(len(charge_states))
     width = 0.35
 
     fig, axes = plt.subplots(1, 2)
     fig.set_figwidth(1.8 * fig.get_figwidth())
     for i, v in enumerate(VARIANTS):
         offset = (i - 0.5) * width
-        e_vals = [agg.get((v, d), {}).get("e_mae", np.nan) for d in DOMAINS]
-        f_vals = [agg.get((v, d), {}).get("f_mae", np.nan) for d in DOMAINS]
+        e_vals = [agg.get((v, c), {}).get("e_mae", np.nan) for c in charge_states]
+        f_vals = [agg.get((v, c), {}).get("f_mae", np.nan) for c in charge_states]
         axes[0].bar(x + offset, e_vals, width, label=v, color=COLORS[v])
         axes[1].bar(x + offset, f_vals, width, label=v, color=COLORS[v])
 
@@ -173,7 +168,7 @@ def plot_bars(agg, name="error_by_domain.pdf"):
     ylabels = ["Energy MAE (meV/atom)", "Force MAE (meV/A)"]
     for ax, title, ylabel in zip(axes, titles, ylabels):
         ax.set_xticks(x)
-        ax.set_xticklabels(DOMAINS, rotation=20, ha="right")
+        ax.set_xticklabels([f"{c:+.0f}" for c in charge_states], fontsize=6)
         ax.set_ylabel(ylabel)
         ax.set_title(title)
         ax.set_yscale("log")
@@ -211,9 +206,10 @@ def main():
             json.dump(all_rows, f)
         print(f"cached rows to {ROWS_CACHE}")
 
-    agg = aggregate(all_rows, ["variant", "domain"])
-    print_table(agg)
-    plot_bars(agg)
+    charge_states = sorted({r["tot_charge"] for r in all_rows})
+    agg = aggregate(all_rows, ["variant", "tot_charge"])
+    print_table(agg, charge_states)
+    plot_bars(agg, charge_states)
 
 
 if __name__ == "__main__":

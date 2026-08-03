@@ -121,10 +121,20 @@ def field_direction(frames, idxs):
     return field / norm if norm > 0 else np.array([0.0, 0.0, 1.0])
 
 
-def force_along_field(forces_i, direction):
+# O and H have opposite-sign force response under F = qE (O carries negative
+# partial charge, H positive) -- averaging all atoms together cancels the
+# signal almost entirely and reads as a near-zero flat line. Split by species
+# so both O and H show their actual (opposite-sign, nonzero) response.
+SPECIES = {"O": 8, "H": 1}
+LINESTYLES = {"O": "-", "H": "--"}
+MARKERS = {"O": "o", "H": "^"}
+
+
+def force_along_field(forces_i, direction, Z, atomic_number):
     # forces_i: [n_atoms, 3] -> (mean, std) of the per-atom force component
-    # along `direction`, in meV/A, across atoms
-    proj = forces_i @ direction * 1000
+    # along `direction`, in meV/A, restricted to atoms of `atomic_number`
+    mask = Z == atomic_number
+    proj = forces_i[mask] @ direction * 1000
     return float(np.mean(proj)), float(np.std(proj))
 
 
@@ -193,34 +203,42 @@ def plot_force_curves(
         idxs = series_indices[s]
         direction = field_direction(frames, idxs)
         field_mags = [frames[i].info["field_magnitude"] for i in idxs]
+        Z = frames[idxs[0]].get_atomic_numbers()
 
-        dft_mean, dft_std = zip(*[force_along_field(dft_forces[i], direction) for i in idxs])
-        ax.errorbar(
-            field_mags,
-            dft_mean,
-            yerr=dft_std,
-            color="black",
-            marker="o",
-            markersize=3,
-            linewidth=0.8,
-            capsize=2,
-            zorder=5,
-            label="DFT",
-        )
-
-        for v in VARIANTS:
-            f = all_model_forces[v]
-            model_mean, model_std = zip(*[force_along_field(f[i], direction) for i in idxs])
+        for species, z in SPECIES.items():
+            dft_mean, dft_std = zip(
+                *[force_along_field(dft_forces[i], direction, Z, z) for i in idxs]
+            )
             ax.errorbar(
                 field_mags,
-                model_mean,
-                yerr=model_std,
-                color=COLORS[v],
-                linewidth=1,
-                capsize=1.5,
-                alpha=0.8,
-                label=v,
+                dft_mean,
+                yerr=dft_std,
+                color="black",
+                linestyle=LINESTYLES[species],
+                marker=MARKERS[species],
+                markersize=3,
+                linewidth=0.8,
+                capsize=2,
+                zorder=5,
+                label=f"DFT {species}",
             )
+
+            for v in VARIANTS:
+                f = all_model_forces[v]
+                model_mean, model_std = zip(
+                    *[force_along_field(f[i], direction, Z, z) for i in idxs]
+                )
+                ax.errorbar(
+                    field_mags,
+                    model_mean,
+                    yerr=model_std,
+                    color=COLORS[v],
+                    linestyle=LINESTYLES[species],
+                    linewidth=1,
+                    capsize=1.5,
+                    alpha=0.8,
+                    label=f"{v} {species}",
+                )
 
         ax.set_title(s, fontsize=6)
         ax.tick_params(labelsize=6)
@@ -230,9 +248,9 @@ def plot_force_curves(
         axes_flat[ax_i].axis("off")
 
     for row in range(n_rows):
-        axes[row, 0].set_ylabel("mean F . field_hat (meV/A)", fontsize=7)
+        axes[row, 0].set_ylabel("mean F . field_hat (meV/A) -- solid=O, dashed=H", fontsize=6)
 
-    axes_flat[0].legend(fontsize=5, loc="best")
+    axes_flat[0].legend(fontsize=4.5, loc="best", ncol=2)
     fig.align_labels()
     Path("figures").mkdir(exist_ok=True)
     fig.savefig(Path("figures") / name, transparent=True, bbox_inches="tight")

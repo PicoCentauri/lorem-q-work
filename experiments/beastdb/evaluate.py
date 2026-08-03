@@ -1,5 +1,5 @@
-"""Energy error, grouped by (binned) total charge, for the beastdb sr vs
-lr variants. beastdb's tot_charge is continuous and
+"""Energy error, grouped by (binned) total charge, for the beastdb film_sr vs
+film_lr charge-conditioning variants. beastdb's tot_charge is continuous and
 mostly non-integer (grand-canonical DFT, self-consistent response to an
 applied potential), unlike ag_clusters/omol_10K's integer charge states, so
 structures are grouped into charge bins rather than exact values. Loads each
@@ -31,11 +31,11 @@ from ase.io import read
 from marathon.grain import Record, RecordMetadata
 from marathon.io import from_dict, read_msgpack, read_yaml
 
-VARIANTS = ["sr", "lr"]
+VARIANTS = ["film_sr", "film_lr"]
 CHECKPOINT = "R2_E"
 VALID_FILE = "../../datasets/beastdb/beastdb_val.xyz"
 
-COLORS = {"sr": "steelblue", "lr": "tomato"}
+COLORS = {"film_sr": "steelblue", "film_lr": "tomato"}
 
 BATCH_SIZE = 32
 
@@ -181,11 +181,11 @@ def plot_bars(agg, name="error_by_charge_bin.pdf"):
     plt.rcParams["text.usetex"] = False  # no LaTeX install on this machine
     bins_present = [b for b in BIN_ORDER if any((v, b) in agg for v in VARIANTS)]
     x = np.arange(len(bins_present))
-    width = 0.8 / len(VARIANTS)
+    width = 0.35
 
     fig, ax = plt.subplots()
     for i, v in enumerate(VARIANTS):
-        offset = (i - (len(VARIANTS) - 1) / 2) * width
+        offset = (i - 0.5) * width
         e_vals = [agg.get((v, b), {}).get("e_mae", np.nan) for b in bins_present]
         ax.bar(x + offset, e_vals, width, label=v, color=COLORS[v])
 
