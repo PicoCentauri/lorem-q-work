@@ -27,6 +27,22 @@ tight settings. Structures are isolated, not periodic (no lattice). Every
 frame carries `ext_field` (V/Å, xyz vector), a zero vector for field-free
 structures.
 
+## Field sign convention
+
+`ext_field` is the electric field **E** as actually seen by the DFT
+calculation: force on an atom is `q * E` (O carries negative partial
+charge, H positive, so the field-induced force on O projects opposite to
+`ext_field` and on H projects along it), and the energy of a dipole in the
+field is `-mu . E`. All files (`train`/`val`/`test`/`paired_free`/
+`paired_perturbed`/`magnitude_sweep`) are consistent with this convention.
+
+(2026-08-03: `val`, `test`, `paired_perturbed`, and `magnitude_sweep` were
+found to have `ext_field` sign-flipped relative to `train` -- a pure
+file-generation inconsistency, not noise, caught by projecting the
+field-induced force change onto `ext_field` per element and checking the
+sign against `F = qE`. Fixed in place; `check_field_conventions.py` in this
+repo's tooling verifies the convention and should stay green for all files.)
+
 ## Physical test cases
 
 **Exp 1: Perturbed vs. field-free MAE — this works today.**
