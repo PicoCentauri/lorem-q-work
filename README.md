@@ -28,3 +28,5 @@ You can add file types to be stored in LFS by editing `.gitattributes`.
 
 - [`ag_clusters`](./experiments/ag_clusters): `Lorem` charge-conditioning ablation (`none`/`film`/`latent`) on the `ag_clusters` dataset.
 - [`water_variational_charge`](./experiments/water_variational_charge): `Lorem` charge-conditioning (`film`/`latent`) crossed with long-range (`lr` on/off) on the `water_variational_charge` dataset.
+- [`water_external_field`](./experiments/water_external_field): `Lorem` field-conditioning ablation (`none`/`l1`/`l1_l0`) crossed with long-range (`lr` on/off) on the `water_external_field` dataset.
+- [`water_slab`](./experiments/water_slab): same field-conditioning x `lr` grid as `water_external_field`, on the periodic `water_slab` dataset.
