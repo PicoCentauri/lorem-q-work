@@ -1,0 +1,26 @@
+train: "data/train"
+valid: "data/valid"
+test_datasets:
+  test: ["data/test", true]
+  test_sweep: ["data/test_sweep", true]
+seed: 42
+batcher:
+  batch_size: 16
+  coarse_strategy: powers_of_4
+  size_strategy: powers_of_4
+  fine_strategy: powers_of_4
+# adds dE/dq. Same 0.15 as ../razor/sr-wf/, set from validation variances
+# so the work-function term matches the force term at initialisation.
+loss_weights: {"energy": 0.5, "forces": 0.5, "work_function": 0.15}
+checkpointers: full
+optimizer: muon
+valid_every_epoch: 2
+decay_style: warmup_cosine
+warmup_epochs: 10
+start_learning_rate: 2e-4
+gradient_clip: 1.0
+max_epochs: 200
+benchmark_pipeline: True
+use_wandb: False
+default_matmul_precision: "float32"
+worker_count: 4

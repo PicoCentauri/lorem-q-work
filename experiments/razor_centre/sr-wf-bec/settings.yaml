@@ -1,0 +1,30 @@
+train: "data/train"
+valid: "data/valid"
+test_datasets:
+  test: ["data/test", true]
+  test_sweep: ["data/test_sweep", true]
+seed: 42
+batcher:
+  batch_size: 16
+  coarse_strategy: powers_of_4
+  size_strategy: powers_of_4
+  fine_strategy: powers_of_4
+# adds the Born effective charge on top. Deliberately low: bec_z has
+# var 0.0209 (std 0.145 e), so weight 1.0 contributes 0.021 to the loss --
+# ~8% of the force term (0.5*0.521=0.261), not 2x it as the bare number
+# suggests. The dataset README warns bec_z is a finite-difference estimate
+# damped by >=15% and recommends masking on `polarizable`; prepare.py
+# already filters train/valid to polarizable frames, so that is handled.
+loss_weights: {"energy": 0.5, "forces": 0.5, "work_function": 0.15, "bec_z": 1.0}
+checkpointers: full
+optimizer: muon
+valid_every_epoch: 2
+decay_style: warmup_cosine
+warmup_epochs: 10
+start_learning_rate: 2e-4
+gradient_clip: 1.0
+max_epochs: 200
+benchmark_pipeline: True
+use_wandb: False
+default_matmul_precision: "float32"
+worker_count: 4
