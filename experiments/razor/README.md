@@ -80,7 +80,7 @@ together. That split ships with the dataset; `prepare.py` does not re-split.
 
 - `prepare.py` -- builds `data/` from `../../datasets/razor/*.xyz`. Run
   locally and synced to the cluster, not re-run per job.
-- `sr/`, `lr/` -- one experiment dir per variant: `model.yaml` +
+- `sr/`, `lr/`, `sr-wf/` -- one experiment dir per variant: `model.yaml` +
   `settings.yaml` + `srun.sh`.
 - `evaluate.py` -- energy / force / work-function parity plots with RMSE, on
   `valid` and `test_sweep`, for both variants.
@@ -110,6 +110,47 @@ one place this experiment departs from the runs listed above -- they use 1000.
 It doubles as the cosine schedule's `decay_steps`, so a job that hits the time
 limit stops with the LR only partly decayed -- if that happens, lower
 `max_epochs` rather than just resubmitting.
+
+## Work-function supervision (`sr-wf/`)
+
+`sr-wf/` is `sr/` plus `work_function` as a third training target, i.e. the
+first variant that supervises `dE/dq` rather than only reading it out
+post-hoc. Model config is byte-identical to `sr/`; only `loss_weights` differs.
+
+`Lorem.predict` already took `jax.value_and_grad` of the energy with respect to
+the *whole batch*, so `dE/dq` is `grads.total_charge` -- it falls out of the
+same backward pass that produces the forces, at no extra cost. Structures in a
+batch don't interact, so the derivative of the summed energy w.r.t. the
+per-structure charge vector is each structure's own `dE/dq`. The per-species
+baseline is charge-independent and drops out, so no offset correction applies
+(unlike for the energy). This lives on the `charge-conditioning` branch of
+`lorem-jax`, hence `sr-wf/srun.sh` uses `~/venv/lorem-wf` rather than
+`~/venv/lorem313`.
+
+**Loss weights.** `energy` and `forces` stay at the house 0.5/0.5, which makes
+`sr/` an exact control -- the new key is inert when it isn't in `loss_weights`
+(no label, so no residual and no loss term; there's a test for this). The
+work-function weight is set from validation-set variances so the new term
+enters at the same magnitude as the force term at initialisation:
+
+| target | std | var | contribution |
+|---|---|---|---|
+| energy | 0.033 eV/atom | 0.0011 | 0.5 × 0.0011 = 0.0006 |
+| forces | 0.722 eV/Å | 0.5214 | 0.5 × 0.5214 = 0.261 |
+| work function | 1.361 V | 1.8523 | **0.15** × 1.8523 = 0.278 |
+
+At the house weight of 0.5 the work function would have contributed 0.926 --
+3.6x the force term and ~1700x the energy term -- and would have dominated
+training. Note `work_function` is intensive (V), so unlike `energy` it is *not*
+normalised per atom: `DEFAULT_NORMALIZATION` covers only `energy` and `stress`.
+
+**Caveat, worth watching in the first epochs.** Those weights balance the
+*asymptotic* residuals, i.e. what a model that has learned the mean would see.
+At initialisation the untrained `dE/dq` is not the mean -- it came out around
+-2 to -18 V against labels of +3 to +7 V in a 3-frame probe, so the work-function
+term starts at ~99% of the total loss. Warmup (10 epochs) and `gradient_clip: 1.0`
+should absorb that, but if the learning curves show energy/force errors stalling
+while the work function drops, lower the 0.15 rather than assuming it converged.
 
 ## Running
 
@@ -159,9 +200,8 @@ _TBD -- not yet trained._
    `razor_train.xyz`/`razor_val.xyz` on the same (r, q) points (it just carries
    extra columns), so it must not be added as extra data on top of this
    experiment -- it replaces it.
-2. **`sr-wf` / `lr-wf`** -- a modified `Lorem` that supervises the autograd
-   `dE/dq` against the `work_function` label directly, instead of only reading
-   it out post-hoc. `work_function` is already persisted in `data/`.
+2. **`lr-wf`** -- the long-range counterpart of `sr-wf/` (see "Work-function
+   supervision" above), once `sr-wf` shows whether the extra target helps.
 3. **`sr-wf-bec` / `lr-wf-bec`** -- additionally supervise `bec_z` (`∂F/∂q`).
    Use with caution: per the dataset's source documentation it is a
    finite-difference estimate damped by ≥15%, so mask on `polarizable`, weight

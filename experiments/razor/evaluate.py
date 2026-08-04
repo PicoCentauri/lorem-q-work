@@ -1,4 +1,4 @@
-"""Parity plots + RMSE for the razor `sr`/`lr` variants.
+"""Parity plots + RMSE for the razor `sr`/`lr`/`sr-wf` variants.
 
 Three quantities per variant, on both the validation split and the
 wide-charge-range test sweep:
@@ -7,11 +7,16 @@ wide-charge-range test sweep:
 - forces (eV/A, all Cartesian components)
 - work function (V) -- the model's autograd `dE/dq`, i.e. backprop through
   the forward pass with respect to the `total_charge` input, against the
-  DFT `work_function` label. Nothing in this round trains on it, so this is
-  a pure "did charge conditioning learn the right charge derivative?" probe.
-  The per-species energy baseline is charge-independent and therefore drops
-  out of `dE/dq` entirely -- no offset correction needed there, unlike for
-  the energy parity.
+  DFT `work_function` label. For `sr`/`lr` nothing trains on it, so it is a
+  pure "did charge conditioning learn the right charge derivative?" probe;
+  for `sr-wf` it is a fitted target and this panel is a training diagnostic
+  instead. The per-species energy baseline is charge-independent and
+  therefore drops out of `dE/dq` entirely -- no offset correction needed
+  there, unlike for the energy parity.
+
+The `dE/dq` here is computed by this script's own `jax.grad`, so it works
+against checkpoints from either lorem version -- it does not depend on
+`Lorem.predict` exposing `work_function`.
 
 Reads the raw extxyz rather than `data/`, so it also gets `polarizable`
 and `q_MD` for the split-out plots. Loads each trained checkpoint directly
@@ -43,7 +48,7 @@ from marathon.grain import Record, RecordMetadata
 from marathon.io import from_dict, read_msgpack, read_yaml
 
 DATA = "../../datasets/razor"
-VARIANTS = ["sr", "lr"]
+VARIANTS = ["sr", "lr", "sr-wf"]
 CHECKPOINT = "R2_E+F"
 
 # (split name, xyz file, polarizable-only). "valid" mirrors what the model
