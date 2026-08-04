@@ -18,3 +18,8 @@ __pycache__/
 experiments/*/data/
 experiments/*/*/run/
 experiments/*/evaluate_rows.json
+
+# hpc-tools stuff
+Makefile
+*.mk
+RUNS.md
