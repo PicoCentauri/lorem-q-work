@@ -93,17 +93,22 @@ together. That split ships with the dataset; `prepare.py` does not re-split.
 `../water_external_field/lr-l1/` -- `num_features=128`, `max_degree=6`,
 `num_radial=16`, `num_message_passing=1`, `num_spherical_features=4`,
 `initialize_node_features: True`, `cutoff=5.0` -- with `max_degree_lr: 0`.
-`settings.yaml` likewise: adam, `loss_weights={"energy": 1000.0, "forces":
-1.0}`, `scale_by_variance: False`, `correct_mean: True`, linear decay from
-4e-4 after 10 epochs down to 1e-6.
+
+`settings.yaml` does *not*, since that experiment still runs the older adam /
+linear-decay recipe. It uses the current house settings, shared verbatim with
+`../ag_clusters/{sr,lr}`, `../water_variational_charge/`, `../beastdb/` and
+`../omol_10K/`: muon, `loss_weights={"energy": 0.5, "forces": 0.5}`,
+`gradient_clip: 1.0`, and a `warmup_cosine` schedule -- warming 1e-6 -> 2e-4
+over the first 10 epochs, then cosine-decaying back to 1e-6 by `max_epochs`.
 
 `batch_size: 16` in the batcher. `ToBatch` packs `batch_size - 1` real
 structures and pads the last slot, so that is 15 × 108 = **1,620 atoms per
 batch**, and ~728 batches per epoch on `data/train`.
 
-`max_epochs: 200` is a wall-clock-driven guess (24 h on one A100-80).
-Note the linear LR schedule is tied to `max_epochs`, so a job that hits the
-time limit stops with the LR only partly decayed -- if that happens, lower
+`max_epochs: 200` is a wall-clock-driven guess (24 h on one A100-80), and the
+one place this experiment departs from the runs listed above -- they use 1000.
+It doubles as the cosine schedule's `decay_steps`, so a job that hits the time
+limit stops with the LR only partly decayed -- if that happens, lower
 `max_epochs` rather than just resubmitting.
 
 ## Running
