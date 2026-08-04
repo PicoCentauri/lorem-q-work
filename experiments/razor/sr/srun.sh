@@ -10,6 +10,14 @@
 #SBATCH --constraint=a100_80
 #SBATCH --time 24:00:00
 
+# `module` is a shell function, and an sbatch script is neither a login nor an
+# interactive shell -- it only ever resolved by inheriting BASH_FUNC_module
+# from an interactive submitting shell, so submitting over a plain `ssh host
+# 'sbatch ...'` silently skipped every load below. Source the init explicitly.
+# (/etc/profile.d/modules.sh is deliberately empty here; `system` is a symlink
+# to the current version.)
+source /apps/modules/system/init/bash
+
 module purge
 module load cuda/13.2.0
 # python 3.12.0 (the python/3.12-base module) deadlocks in

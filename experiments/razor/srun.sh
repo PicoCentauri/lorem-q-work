@@ -9,6 +9,10 @@
 #SBATCH --partition=a40
 #SBATCH --time 02:00:00
 
+# see sr/srun.sh -- `module` is a shell function an sbatch script does not
+# inherit unless it was submitted from an interactive shell.
+source /apps/modules/system/init/bash
+
 module purge
 module load cuda/13.2.0
 # see sr/srun.sh -- python 3.12.0 has a multiprocessing.resource_tracker
