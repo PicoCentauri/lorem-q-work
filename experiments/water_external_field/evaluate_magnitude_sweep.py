@@ -39,7 +39,7 @@ from ase.io import read
 from marathon.grain import Record, RecordMetadata
 from marathon.io import from_dict, read_msgpack, read_yaml
 
-VARIANTS = ["sr-none", "sr-l1", "sr-l1_l0"]  # lr-* stale post dipole-field fix, retraining
+VARIANTS = ["sr-none", "sr-l1", "lr-l1"]  # l1_l0 retired (matched l1, added complexity)
 CHECKPOINT = "R2_E+F"
 DATA_FILE = "../../datasets/water_external_field/water_external_field_magnitude_sweep.xyz"
 BATCH_SIZE = 64
