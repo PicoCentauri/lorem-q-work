@@ -9,4 +9,4 @@ model:
     num_spherical_features: 4
     lr: true
     initialize_node_features: True
-    field_conditioning: "l1"
+    field_conditioning: true
