@@ -132,10 +132,19 @@ RMSE (last validation block, epoch 200):
 |---|---|---|---|---|---|
 | `sr` | **0.746 meV/atom** | **25.2 meV/Å** | -- | -- | 6h09m |
 | `sr-wf` | 1.478 meV/atom | 47.2 meV/Å | 0.123 V | -- | 6h07m |
-| `sr-wf-bec` | R² 99.79 | R² 99.47 | R² 98.90 | **R² 96.96** | 13h23m |
+| `sr-wf-bec` | 1.593 meV/atom | 52.5 meV/Å | **0.093 V** | **0.0253 e** | 13h23m |
 
-(`sr-wf-bec` is quoted as R² because its post-training test collation crashed
-before the RMSE table was written -- see below. Its checkpoints are intact.)
+R²: `sr` 99.95/99.88, `sr-wf` 99.82/99.57/98.09,
+`sr-wf-bec` 99.79/99.47/98.90/96.96.
+
+`sr-wf-bec`'s post-training test collation crashed (see below), but its final
+validation block was written before that, so these are its own numbers on the
+same 538-frame set as the other two rows.
+
+Two things stand out even before the cross-folder comparison: `sr-wf-bec` has
+the **best work function of the three** (0.093 V vs `sr-wf`'s 0.123), so
+supervising `∂²E/∂r∂q` helped `∂E/∂q` rather than competing with it; and
+`bec_z` itself lands at 0.0253 e against a 0.145 e label spread.
 
 > **Do not compare the validation RMSEs above across folders.** Each run's
 > own validation set is different: `../razor/` validates on 1218 full-stencil
@@ -185,8 +194,9 @@ only ~8% of the loss. All four targets converged simultaneously; supervising
 
 ### `sr-wf-bec` post-training crash
 
-Training completed all 200 epochs (13h23m, 94% GPU) and every checkpoint was
-written. The job then failed in `predict_and_collate` on the test splits:
+Training completed all 200 epochs (13h23m, 94% GPU), the final validation
+block was written, and every checkpoint was saved. The job then failed in
+`predict_and_collate` on the test splits:
 
 ```
 INTERNAL: RET_CHECK failure (config_assigner.cc:403) !candidates.empty()
