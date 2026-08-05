@@ -233,7 +233,7 @@ def metrics(d):
 
 def print_table(all_rows):
     header = (
-        f"{'split':<12}{'variant':<8}{'subset':<14}"
+        f"{'split':<12}{'variant':<12}{'subset':<14}"
         f"{'E RMSE':>10}{'E MAE':>10}{'F RMSE':>10}{'F MAE':>10}"
         f"{'WF RMSE':>10}{'WF MAE':>10}{'n':>8}"
     )
@@ -253,7 +253,7 @@ def print_table(all_rows):
             for label, rs in subsets:
                 m = metrics(collect(rs))
                 print(
-                    f"{split:<12}{v:<8}{label:<14}"
+                    f"{split:<12}{v:<12}{label:<14}"
                     f"{m['e_rmse']:>10.2f}{m['e_mae']:>10.2f}"
                     f"{m['f_rmse']:>10.2f}{m['f_mae']:>10.2f}"
                     f"{m['wf_rmse']:>10.4f}{m['wf_mae']:>10.4f}{m['n']:>8d}"

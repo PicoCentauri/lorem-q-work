@@ -137,20 +137,46 @@ RMSE (last validation block, epoch 200):
 (`sr-wf-bec` is quoted as R² because its post-training test collation crashed
 before the RMSE table was written -- see below. Its checkpoints are intact.)
 
-**Centre-only training is competitive.** Against `../razor/sr`, which sees
-2.25x more data (10,931 vs 4,860 frames), `sr` here is *better* on energy
-(0.746 vs 0.855 meV/atom) and 7% worse on forces (25.2 vs 23.5), in 6h
-instead of 14h. The off-stencil frames make `∂E/∂q` learnable but the
-distribution distortion they introduce costs little to remove.
+> **Do not compare the validation RMSEs above across folders.** Each run's
+> own validation set is different: `../razor/` validates on 1218 full-stencil
+> frames, this folder on 538 centre frames, and the centre frames are the
+> easier set -- equilibrium (r, q) pairs rather than off-stencil ones. Use
+> `evaluate.py`'s numbers below, which score every variant in both folders on
+> the *same* held-out set.
 
-**The work function is essentially dataset-independent**: 0.123 V here vs
-0.121 V on the full stencil, against a 1.36 V label spread. The centre frames
-alone are enough to learn `dE/dq`, despite carrying none of the off-stencil
-(r, q) pairs that make it identifiable in principle.
+### On the common evaluation set
 
-**The work-function target costs ~1.9x on both energy and forces** at weight
-0.15, matching `../razor/`. See that README -- the weight is too high, and a
-0.05 / 0.02 sweep is the follow-up.
+`evaluate.py` scores all six variants on `razor_val.xyz` (polarizable,
+n=1218) and on the wide-charge test sweep, so the two folders are directly
+comparable. Validation split, RMSE:
+
+| variant | trained on | energy | forces | work function |
+|---|---|---|---|---|
+| `../razor/sr` | full stencil | **0.82** | **23.6** | 0.236 |
+| `../razor/lr` | full stencil | 0.76 | 20.3 | 0.181 |
+| `../razor/sr-wf` | full stencil | 1.61 | 40.6 | **0.121** |
+| `sr` | centre only | 1.04 | 31.9 | 0.434 |
+| `sr-wf` | centre only | 1.98 | 52.1 | 0.243 |
+| `sr-wf-bec` | centre only | 1.91 | 56.3 | 0.202 |
+
+**Centre-only training is worse across the board**, by 27% on energy, 35% on
+forces and 84% on the work function. The 2.25x smaller training set is not
+free after all. It does still cost only 6h instead of 14h.
+
+**The off-stencil frames matter for `∂E/∂q`, as originally argued.** Removing
+them doubles the work-function error, both for the models that train on it
+(0.243 vs 0.121 V) and those that do not (0.434 vs 0.236 V). `../razor/`'s
+README says the off-stencil labelling "is exactly what makes `∂E/∂q`
+learnable" -- that holds up quantitatively.
+
+**Training on the work function improves it ~1.8x here** (0.434 -> 0.243 V),
+matching the ~1.9x on the full stencil, at ~1.9x worse energy and ~1.6x worse
+forces. Note `../razor/lr` reaches 0.181 V *without* the target while being
+the best model on energy and forces too, so the Ewald head looks like a
+better route to the work function than the explicit target at weight 0.15.
+
+**Adding `bec_z` slightly helps the work function** (0.202 vs 0.243 V) and
+energy (1.91 vs 1.98), at some cost in forces (56.3 vs 52.1).
 
 **Born effective charges are learnable.** `bec_z` R² went -0.2% (epoch 2) →
 82% (22) → 97.0% (200), on a finite-difference label damped by ≥15% carrying

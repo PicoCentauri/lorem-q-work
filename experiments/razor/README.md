@@ -208,9 +208,35 @@ contribution are switched off. Worth an `lmax_lr` ablation.
 **Training on the work function costs accuracy at weight 0.15.** `sr-wf` is
 ~1.9x worse on energy and ~1.7x worse on forces than `sr`, and buys `dE/dq`
 at 0.121 V against a 1.36 V label spread. The same trade reproduces on
-`../razor_centre/` (1.9x / 1.9x), so this is the weight, not a quirk of one
-dataset -- 0.15 was picked to match the force term's *initial* contribution,
-which was too aggressive. A sweep at 0.05 / 0.02 is the obvious follow-up.
+`../razor_centre/`, so this is the weight, not a quirk of one dataset --
+0.15 was picked to match the force term's *initial* contribution, which was
+too aggressive. A sweep at 0.05 / 0.02 is the obvious follow-up.
+
+### Work function: trained vs not (`evaluate.py`, valid split, n=1218)
+
+`evaluate.py` computes `dE/dq` with its own `jax.grad` for every variant,
+whether or not it was a training target, so this is a like-for-like probe:
+
+| variant | trained on WF? | WF RMSE | energy | forces |
+|---|---|---|---|---|
+| `sr` | no | 0.236 V | 0.82 | 23.6 |
+| `lr` | no | **0.181 V** | 0.76 | 20.3 |
+| `sr-wf` | yes | **0.121 V** | 1.61 | 40.6 |
+
+Charge conditioning alone already gets most of the way: against a 1.36 V
+label spread, models that never saw the work function reach 0.236 V (`sr`)
+and 0.181 V (`lr`). Training on it improves that by 1.9x over `sr` but only
+1.5x over `lr` -- and `lr` gets there while also being the best energy and
+force model. **If the work function is what you want, the Ewald head is a
+better lever than the explicit target at this weight.**
+
+On the test sweep, restricted to polarizable frames (n=34, the honest
+extrapolation check), `sr-wf` is the *worst* of the three at 0.425 V against
+`lr`'s 0.209 and `sr`'s 0.275: training on the target inside the +-0.25 e
+stencil appears to hurt generalisation outside it. `lr` meanwhile collapses
+on the non-polarizable frames (3.35 V, worst of all) while being best on
+polarizable ones -- the Ewald head extrapolates well inside the
+linear-response window and badly outside it.
 
 **Watch the warmup transient, not the mid-training numbers.** `sr-wf`'s force
 R² was 1.5% at epoch 2 and 98.8% by epoch 34; its energy looked 5x *better*
