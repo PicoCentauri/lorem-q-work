@@ -238,6 +238,32 @@ on the non-polarizable frames (3.35 V, worst of all) while being best on
 polarizable ones -- the Ewald head extrapolates well inside the
 linear-response window and badly outside it.
 
+### Born effective charges, none of them trained on it
+
+`evaluate.py` computes `Z* = -(A ε₀) ∂²E/∂r∂q` itself, so `bec_z` is scored
+here even though no variant in this folder supervises it. `razor_val.xyz`
+carries no label, so this is the test sweep. RMSE in e, label spread 0.145 e:
+
+| variant | polarizable (34) | non-pol. (226) | all (260) |
+|---|---|---|---|
+| `sr` | 0.0399 | 0.0466 | 0.0458 |
+| `lr` | **0.0270** | 0.0744 | 0.0701 |
+| `sr-wf` | 0.0462 | 0.0645 | 0.0624 |
+
+**The Ewald head gives the best Born effective charges of any model here, at
+0.0270 e, without ever training on them** -- 1.5x better than `sr`. It also
+gives the best work function on the same frames (0.209 V). Both are second
+derivatives of `E(r, q)`, so a long-range term that improves the charge
+response evidently improves its position derivative too.
+
+For context, `../razor_centre/sr-wf-bec/` -- the only variant anywhere that
+*does* supervise `bec_z` -- reaches 0.0373 e, worse than `lr` here. That
+comparison is confounded (different training set, 2.25x fewer updates), so it
+is not evidence that supervision is useless; within its own folder it is 1.7x
+better than the unsupervised `sr`. But it does mean **the cheapest route to
+good Born effective charges in this project so far is the Ewald head, not the
+explicit target.**
+
 **Watch the warmup transient, not the mid-training numbers.** `sr-wf`'s force
 R² was 1.5% at epoch 2 and 98.8% by epoch 34; its energy looked 5x *better*
 than `sr` at epoch 34 and ended up 1.9x worse. Single mid-training validation

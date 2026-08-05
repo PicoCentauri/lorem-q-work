@@ -246,6 +246,15 @@ Note also that `sr`, which never saw `bec_z` or `work_function`, already
 reaches 0.062 e -- so as with the work function, charge conditioning plus
 energy/force supervision recovers much of the derivative structure unaided.
 
+`../razor/` now scores `bec_z` too, though nothing there trains on it. On the
+same frames, `../razor/lr` reaches **0.0270 e** -- better than this folder's
+supervised `sr-wf-bec` at 0.0373. That cross-folder comparison is confounded
+(2.25x more data and 2.25x more gradient updates, per the caveat above), so
+it does not show supervision to be useless: within each folder the respective
+lever helps by a similar factor, 1.7x here from supervising `bec_z` and 1.5x
+there from the Ewald head. It does suggest the Ewald head is the cheaper
+route, and `sr-450ep/` plus an `lmax_lr` ablation would settle it.
+
 **Born effective charges are learnable.** `bec_z` R² went -0.2% (epoch 2) →
 82% (22) → 97.0% (200), on a finite-difference label damped by ≥15% carrying
 only ~8% of the loss. All four targets converged simultaneously; supervising
