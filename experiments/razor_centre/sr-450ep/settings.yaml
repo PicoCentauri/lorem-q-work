@@ -1,0 +1,38 @@
+train: "data/train"
+valid: "data/valid"
+test_datasets:
+  test: ["data/test", true]
+  test_sweep: ["data/test_sweep", true]
+seed: 42
+batcher:
+  batch_size: 16
+  coarse_strategy: powers_of_4
+  size_strategy: powers_of_4
+  fine_strategy: powers_of_4
+# sr/ with the training budget matched to ../razor/sr/ in *gradient updates*
+# rather than epochs, to separate "less data" from "less training".
+#
+# An epoch here is 2.25x smaller (4,860 frames vs 10,931), so sr/'s 200 epochs
+# is 64,800 updates against razor's 145,700. This run scales both the total
+# and the warmup by that factor, so the cosine schedule has the same shape in
+# update space:
+#
+#   450 epochs x 324 batches = 145,800 updates  (razor: 145,747)
+#    22 epochs x 324 batches =   7,128 warmup   (razor:   7,287)
+#
+# Convention follows arXiv 2602.22931 SI S-II: compare models at similar
+# numbers of gradient updates, GU = epochs x dataset size / batch size.
+# Everything else is identical to sr/, so the pair isolates training length.
+loss_weights: {"energy": 0.5, "forces": 0.5}
+checkpointers: full
+optimizer: muon
+valid_every_epoch: 2
+decay_style: warmup_cosine
+warmup_epochs: 22
+start_learning_rate: 2e-4
+gradient_clip: 1.0
+max_epochs: 450
+benchmark_pipeline: True
+use_wandb: False
+default_matmul_precision: "float32"
+worker_count: 4

@@ -47,7 +47,12 @@ from ase.io import read
 
 from marathon.grain import Record, RecordMetadata
 from marathon.io import from_dict, read_msgpack, read_yaml
-from lorem.models.mlip import EPSILON_0
+
+# defined here rather than imported from lorem.models.mlip: this script is
+# meant to run against checkpoints from either lorem version, and the older
+# build (~/venv/lorem313, which razor/ trained on) has no EPSILON_0.
+# vacuum permittivity in e^2 / (eV * Angstrom)
+EPSILON_0 = 0.005526349406
 
 DATA = "../../datasets/razor"
 VARIANTS = ["sr", "sr-wf", "sr-wf-bec"]

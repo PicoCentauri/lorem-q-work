@@ -20,6 +20,7 @@ less data.
 | `sr/` | energy + forces | control for this folder; direct counterpart of `../razor/sr/` |
 | `sr-wf/` | + `work_function` | supervises the autograd `dE/dq` |
 | `sr-wf-bec/` | + `bec_z` | additionally supervises the Born effective charge |
+| `sr-450ep/` | energy + forces | `sr/` with the budget matched to `../razor/sr/` in gradient updates, not epochs -- see the caveat under Results |
 
 `model.yaml` is identical across `sr/` and `sr-wf/`; `sr-wf-bec/` adds
 `predict_bec: True`. All three share one `data/`, so **only `loss_weights`
