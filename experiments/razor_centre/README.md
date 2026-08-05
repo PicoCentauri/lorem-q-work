@@ -169,8 +169,37 @@ comparable. Validation split, RMSE:
 | `sr-wf-bec` | centre only | 1.91 | 56.3 | 0.202 |
 
 **Centre-only training is worse across the board**, by 27% on energy, 35% on
-forces and 84% on the work function. The 2.25x smaller training set is not
-free after all. It does still cost only 6h instead of 14h.
+forces and 84% on the work function.
+
+> **Caveat: this comparison is confounded by training length, and the size of
+> the confound is exactly the size of the data difference.** Both folders run
+> `max_epochs: 200`, but an epoch here is 2.25x smaller, so:
+>
+> | run | frames | steps | gradient updates | runtime |
+> |---|---|---|---|---|
+> | `../razor/sr` | 10,931 | 2,186,200 | 145,700 | 13h50m |
+> | `sr` | 4,860 | 972,000 | 64,800 | 6h09m |
+>
+> So "less data" and "less training" are not separated here, and the gap
+> above may be partly or wholly the latter.
+>
+> The flat tail of the validation curve does *not* settle it. Both runs end
+> perfectly flat (loss 2.75e-04 x3 for `../razor/sr`, 3.18e-04 x3 here), but
+> a cosine schedule always ends flat because the LR has annealed to 1e-6 --
+> that shows the schedule finished, not that the model reached its best
+> achievable error.
+>
+> The fix is to match gradient updates rather than epochs, the convention the
+> group's own benchmarking paper uses (arXiv 2602.22931, SI §S-II: "it is
+> important to train models with a similar number of gradient updates, where
+> GU = epochs x dataset size / batch size"). That means
+> `max_epochs = 200 x 10931/4860 ≈ 450` here, giving 145,800 updates against
+> razor's 145,700, with the cosine annealing over the matched budget.
+> Estimated runtime 13h50m for `sr` -- but ~30h for `sr-wf-bec`, which does
+> not fit the 24h limit and would need a restart path.
+>
+> **Until that control is run, read the row above as an upper bound on the
+> data effect, not a measurement of it.**
 
 **The off-stencil frames matter for `∂E/∂q`, as originally argued.** Removing
 them doubles the work-function error, both for the models that train on it

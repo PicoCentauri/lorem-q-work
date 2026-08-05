@@ -356,10 +356,19 @@ def _parity(ax, ref, pred, color, label, unit, polarizable=None, legend=False, s
     ax.set_aspect("equal")
     ax.set_xlabel(f"DFT {label} ({unit})")
     ax.set_ylabel(f"LOREM {label} ({unit})")
+    # On mixed splits the non-polarizable frames dominate the count and sit
+    # outside the linear-response window, where both the model and the
+    # reference labels are least trustworthy -- a pooled RMSE is then mostly
+    # a statement about those. Quote the polarizable-only figure instead, and
+    # say so, rather than a number that averages the two regimes.
+    if polarizable is not None and polarizable.any() and not polarizable.all():
+        text = f"RMSE (pol.) = {rmse(pred[polarizable], ref[polarizable]):.3g} {unit}"
+    else:
+        text = f"RMSE = {rmse(pred, ref):.3g} {unit}"
     ax.text(
         0.04,
         0.96,
-        f"RMSE = {rmse(pred, ref):.3g} {unit}",
+        text,
         transform=ax.transAxes,
         va="top",
         ha="left",

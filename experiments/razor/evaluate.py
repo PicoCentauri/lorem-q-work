@@ -41,11 +41,13 @@ import matplotlib.pyplot as plt
 import mpltex
 
 import jax
+import jax.numpy as jnp
 
 from ase.io import read
 
 from marathon.grain import Record, RecordMetadata
 from marathon.io import from_dict, read_msgpack, read_yaml
+from lorem.models.mlip import EPSILON_0
 
 DATA = "../../datasets/razor"
 VARIANTS = ["sr", "lr", "sr-wf"]
@@ -117,11 +119,38 @@ def make_predict_fn(model):
         total, _ = model.energy(params, batch._replace(total_charge=q))
         return total
 
+    def bec_of_batch(params, batch):
+        # Z* = -(A eps0) d2E/(dr dq). Computed here rather than read off
+        # model.predict, so it works on checkpoints trained without
+        # predict_bec -- the whole point being to score variants that never
+        # supervised it. Area from |c1 x c2|, so the varying out-of-plane
+        # vector never enters (pbc = T T F).
+        sr = batch[1]
+
+        def dE_dpositions(total_charge):
+            def energy_of_positions(positions):
+                shifted = batch._replace(
+                    sr=sr._replace(positions=positions), total_charge=total_charge
+                )
+                return model.energy(params, shifted)[0]
+
+            return jax.grad(energy_of_positions)(sr.positions)
+
+        _, d2E_drdq = jax.jvp(
+            dE_dpositions,
+            (batch.total_charge,),
+            (jnp.ones_like(batch.total_charge),),
+        )
+        area = jnp.linalg.norm(jnp.cross(sr.cell[:, 0, :], sr.cell[:, 1, :]), axis=-1)
+        scale = (area * EPSILON_0)[sr.atom_to_structure][:, None]
+        return -d2E_drdq * scale
+
     @jax.jit
     def predict_fn(params, batch):
         preds = model.predict(params, batch)
         dEdq = jax.grad(energy_of_charge, argnums=2)(params, batch, batch.total_charge)
-        return preds, dEdq
+        bec = bec_of_batch(params, batch)
+        return preds, dEdq, bec
 
     return predict_fn
 
@@ -148,10 +177,11 @@ def evaluate_variant(model, params, species_weights, frames):
     cursor = 0
     for i, record in enumerate(batcher(it())):
         batch = record.data
-        preds, dEdq = predict_fn(params, batch)
+        preds, dEdq, bec = predict_fn(params, batch)
         e_pred = np.array(preds["energy"])
         f_pred = np.array(preds["forces"])
         wf_pred = np.array(dEdq)
+        bec_pred = np.array(bec)
         atom_to_structure = np.array(batch.sr.atom_to_structure)
         n_real = int(np.array(batch.sr.structure_mask).sum())
 
@@ -180,6 +210,13 @@ def evaluate_variant(model, params, species_weights, frames):
                     "wf_ref": float(atoms.info["work_function"]),
                 }
             )
+            # razor_val.xyz carries no bec_z; razor_test.xyz does. Only score
+            # it where there is a label.
+            if "bec_z" in atoms.arrays:
+                rows[-1]["bec_pred"] = (
+                    bec_pred[atom_to_structure == local_i].ravel().tolist()
+                )
+                rows[-1]["bec_ref"] = atoms.arrays["bec_z"].ravel().tolist()
         if (i + 1) % 10 == 0:
             print(f"  ...{cursor}/{len(frames)} structures", flush=True)
     return rows
@@ -199,7 +236,7 @@ def mae(pred, ref):
 def collect(rows):
     """Flatten a row list into arrays, in the units used for reporting."""
     polarizable = np.array([r["polarizable"] for r in rows])
-    return {
+    out = {
         "e_pred": np.array([r["e_pred"] for r in rows]) * 1000,  # meV/atom
         "e_ref": np.array([r["e_ref"] for r in rows]) * 1000,
         "f_pred": np.concatenate([r["f_pred"] for r in rows]) * 1000,  # meV/A
@@ -213,10 +250,17 @@ def collect(rows):
             polarizable, [len(r["f_ref"]) for r in rows]
         ),
     }
+    if all("bec_ref" in r for r in rows):
+        out["bec_pred"] = np.concatenate([r["bec_pred"] for r in rows])  # e
+        out["bec_ref"] = np.concatenate([r["bec_ref"] for r in rows])
+        out["bec_polarizable"] = np.repeat(
+            polarizable, [len(r["bec_ref"]) for r in rows]
+        )
+    return out
 
 
 def metrics(d):
-    return {
+    m = {
         "e_rmse": rmse(d["e_pred"], d["e_ref"]),
         "e_mae": mae(d["e_pred"], d["e_ref"]),
         "f_rmse": rmse(d["f_pred"], d["f_ref"]),
@@ -225,15 +269,20 @@ def metrics(d):
         "wf_mae": mae(d["wf_pred"], d["wf_ref"]),
         "n": len(d["e_pred"]),
     }
+    if "bec_ref" in d:
+        m["bec_rmse"] = rmse(d["bec_pred"], d["bec_ref"])
+        m["bec_mae"] = mae(d["bec_pred"], d["bec_ref"])
+    return m
 
 
 def print_table(all_rows):
     header = (
         f"{'split':<12}{'variant':<12}{'subset':<14}"
         f"{'E RMSE':>10}{'E MAE':>10}{'F RMSE':>10}{'F MAE':>10}"
-        f"{'WF RMSE':>10}{'WF MAE':>10}{'n':>8}"
+        f"{'WF RMSE':>10}{'WF MAE':>10}{'Z RMSE':>10}{'Z MAE':>10}{'n':>8}"
     )
-    print("\nE in meV/atom, F in meV/A, WF (dE/dq) in V")
+    print("\nE in meV/atom, F in meV/A, WF (dE/dq) in V, Z (bec_z) in e")
+    print("Z is blank where the split's xyz carries no bec_z label (razor_val).")
     print(header)
     print("-" * len(header))
     for split, _, _ in SPLITS:
@@ -252,7 +301,13 @@ def print_table(all_rows):
                     f"{split:<12}{v:<12}{label:<14}"
                     f"{m['e_rmse']:>10.2f}{m['e_mae']:>10.2f}"
                     f"{m['f_rmse']:>10.2f}{m['f_mae']:>10.2f}"
-                    f"{m['wf_rmse']:>10.4f}{m['wf_mae']:>10.4f}{m['n']:>8d}"
+                    f"{m['wf_rmse']:>10.4f}{m['wf_mae']:>10.4f}"
+                    + (
+                        f"{m['bec_rmse']:>10.4f}{m['bec_mae']:>10.4f}"
+                        if "bec_rmse" in m
+                        else f"{'--':>10}{'--':>10}"
+                    )
+                    + f"{m['n']:>8d}"
                 )
 
 
@@ -297,10 +352,19 @@ def _parity(ax, ref, pred, color, label, unit, polarizable=None, legend=False, s
     ax.set_aspect("equal")
     ax.set_xlabel(f"DFT {label} ({unit})")
     ax.set_ylabel(f"LOREM {label} ({unit})")
+    # On mixed splits the non-polarizable frames dominate the count and sit
+    # outside the linear-response window, where both the model and the
+    # reference labels are least trustworthy -- a pooled RMSE is then mostly
+    # a statement about those. Quote the polarizable-only figure instead, and
+    # say so, rather than a number that averages the two regimes.
+    if polarizable is not None and polarizable.any() and not polarizable.all():
+        text = f"RMSE (pol.) = {rmse(pred[polarizable], ref[polarizable]):.3g} {unit}"
+    else:
+        text = f"RMSE = {rmse(pred, ref):.3g} {unit}"
     ax.text(
         0.04,
         0.96,
-        f"RMSE = {rmse(pred, ref):.3g} {unit}",
+        text,
         transform=ax.transAxes,
         va="top",
         ha="left",
@@ -317,6 +381,8 @@ def plot_split(all_rows, split, name):
         ("f", "force", "meV/Å"),
         ("wf", "work function", "V"),
     ]
+    if any("bec_ref" in r for r in all_rows if r["split"] == split):
+        quantities.append(("bec", "Born effective charge", "e"))
 
     fig, axes = plt.subplots(
         len(VARIANTS), len(quantities), squeeze=False, constrained_layout=True
