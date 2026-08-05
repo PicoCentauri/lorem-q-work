@@ -76,6 +76,36 @@ the basis for the follow-up experiment below.
 Splits are by `struc_pk`, never within one -- the 3 charges of a geometry stay
 together. That split ships with the dataset; `prepare.py` does not re-split.
 
+### TODO: max-force screening (checked -- currently a no-op here)
+
+No force-based exclusion is applied anywhere in this repo, and the dataset
+README does not mention one. `atoms.info["max_force"]` is present on every
+frame, so a "drop configs with max force > 20 eV/Å" rule is directly
+checkable. Measured:
+
+| file | frames | `max_force` median / p95 / max | >20 eV/Å | of which polarizable |
+|---|---|---|---|---|
+| `razor_train.xyz` | 16,170 | 3.44 / 5.02 / **92.3** | 21 | **2** |
+| `razor_val.xyz` | 1,797 | 3.45 / 5.13 / **145.5** | 3 | **0** |
+| `razor_test.xyz` | 260 | 3.72 / 4.84 / 5.14 | 0 | 0 |
+
+**The `polarizable` filter already removes almost all of them.** Of the 21
+high-force training frames only 2 survive into the 10,931-frame training
+pool -- 0.018% -- and none survive into the validation pool. So adding the
+cutoff would change these results not at all, and the two criteria are
+evidently correlated: frames near dielectric breakdown are also the ones with
+runaway forces.
+
+Two things to note if it is added anyway:
+
+- The 2 surviving frames sit in a single `struc_pk`. Dropping frames
+  individually would break that geometry's 3-charge stencil, which the
+  splits are explicitly built to keep together, so the exclusion should be
+  applied per `struc_pk` (3 frames) rather than per frame.
+- The value is worth having as a guard for *future* data rather than for
+  this dataset -- a 145 eV/Å frame is a broken configuration, and relying on
+  `polarizable` to catch it is incidental rather than by design.
+
 ## Layout
 
 - `prepare.py` -- builds `data/` from `../../datasets/razor/*.xyz`. Run

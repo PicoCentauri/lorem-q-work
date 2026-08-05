@@ -58,6 +58,27 @@ two folders. The split key is `struc_pk` and is never split within a
 structure, so there is no leakage. `prepare.py` raises if any centre frame
 fails to land in a split, rather than silently dropping it.
 
+## TODO: max-force screening (checked -- currently a no-op here)
+
+Same check as `../razor/README.md`, on this folder's source file. No
+force-based exclusion is applied anywhere in the repo; `max_force` is present
+on every frame, so the "drop configs with max force > 20 eV/Å" rule is
+directly measurable:
+
+| file | frames | `max_force` median / p95 / max | >20 eV/Å | of which polarizable |
+|---|---|---|---|---|
+| `razor_centre.xyz` | 5,989 | 3.42 / 5.02 / **145.5** | 8 | **1** |
+
+**One frame.** The `polarizable` filter already removes 7 of the 8, so the
+cutoff would drop 0.019% of the 5,398-frame polarizable pool and change
+nothing in the results above. That frame sits in one `struc_pk`; since this
+folder is one frame per structure, dropping it costs exactly one training
+structure.
+
+Worth adding as a guard for future data rather than for this dataset -- a
+145 eV/Å configuration is broken, and it is incidental rather than by design
+that `polarizable` happens to catch it.
+
 ## Born effective charges
 
 `bec_z` in the dataset is the dimensionless Born effective charge; the model
