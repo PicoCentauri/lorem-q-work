@@ -49,7 +49,11 @@ from marathon.io import from_dict, read_msgpack, read_yaml
 
 DATA = "../../datasets/razor"
 VARIANTS = ["sr", "sr-wf", "sr-wf-bec"]
-CHECKPOINT = "R2_E+F"
+# the summed-R2 checkpoint is named after the targets it covers -- "R2_E+F"
+# for energy+forces, "R2_E+F+W" once the work function is trained on,
+# "R2_E+F+W+B" with the Born effective charges on top. Resolve it per variant
+# instead of hardcoding one name, which only ever matched the E+F runs.
+CHECKPOINT_GLOB = "R2_*"
 
 # (split name, xyz file, polarizable-only). "valid" mirrors what the model
 # actually trained on; "test_sweep" is the full 13-point q in [-1.5, 1.5]
@@ -60,7 +64,7 @@ SPLITS = [
     ("test_sweep", "razor_test", False),
 ]
 
-COLORS = {"sr": "steelblue", "lr": "tomato"}
+COLORS = {"sr": "steelblue", "sr-wf": "seagreen", "sr-wf-bec": "rebeccapurple"}
 POLARIZABLE_COLORS = {True: "steelblue", False: "darkorange"}
 
 BATCH_SIZE = 32
@@ -87,7 +91,17 @@ def load_frames(name, polarizable_only, n=None):
 
 
 def load_checkpoint(variant):
-    folder = Path(variant) / "run" / "checkpoints" / CHECKPOINT / "model"
+    candidates = sorted(
+        p
+        for p in (Path(variant) / "run" / "checkpoints").glob(CHECKPOINT_GLOB)
+        if p.is_dir() and not p.name.endswith(".backup")
+    )
+    if len(candidates) != 1:
+        raise RuntimeError(
+            f"{variant}: expected exactly one {CHECKPOINT_GLOB} checkpoint, "
+            f"found {[p.name for p in candidates]}"
+        )
+    folder = candidates[0] / "model"
     model = from_dict(read_yaml(folder / "model.yaml"))
     params = read_msgpack(folder / "model.msgpack")
     species_weights = read_yaml(folder / "baseline.yaml")["elemental"]
@@ -321,7 +335,7 @@ def plot_split(all_rows, split, name):
                 ax,
                 d[f"{key}_ref"],
                 d[f"{key}_pred"],
-                COLORS[v],
+                COLORS.get(v, "grey"),
                 label,
                 unit,
                 polarizable=d[f"{key}_polarizable"],
