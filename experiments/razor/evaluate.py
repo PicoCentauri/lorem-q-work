@@ -74,7 +74,11 @@ SPLITS = [
 COLORS = {"sr": "steelblue", "lr": "tomato", "sr-wf": "seagreen"}
 POLARIZABLE_COLORS = {True: "steelblue", False: "darkorange"}
 
-BATCH_SIZE = 32
+# 8, not 32: this script now computes bec_z via jvp(jvp(energy)) for every
+# variant, which holds far more live intermediates than a plain
+# forward+backward and OOM'd at 32 on an A40's 48 GB -- the same reason
+# razor_centre/evaluate.py uses 8. Evaluation is not throughput-critical.
+BATCH_SIZE = 8
 
 # Points drawn in the force parity scatter (RMSE is always over all of
 # them). ~400k components for valid would make an unopenable PDF.
