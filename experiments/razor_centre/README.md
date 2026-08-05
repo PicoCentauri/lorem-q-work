@@ -187,6 +187,35 @@ better route to the work function than the explicit target at weight 0.15.
 **Adding `bec_z` slightly helps the work function** (0.202 vs 0.243 V) and
 energy (1.91 vs 1.98), at some cost in forces (56.3 vs 52.1).
 
+### Born effective charges, trained on or not
+
+`evaluate.py` computes `Z* = -(A ε₀) ∂²E/∂r∂q` itself, so every variant is
+scored whether or not it supervised `bec_z`. The label only exists on
+`razor_test.xyz` and `razor_centre.xyz` (not `razor_val.xyz`), so this is the
+test sweep -- which is where the dataset README wants it anyway, those labels
+coming from a 13-point spline rather than the damped 3-point estimate.
+
+Test sweep, RMSE in e (label spread 0.145 e):
+
+| variant | trained on `bec_z`? | all (260) | polarizable (34) | non-pol. (226) |
+|---|---|---|---|---|
+| `sr` | no | **0.0738** | 0.0620 | **0.0754** |
+| `sr-wf` | no | 0.0904 | 0.0541 | 0.0947 |
+| `sr-wf-bec` | yes | 0.0915 | **0.0373** | 0.0971 |
+
+**Supervising `bec_z` gives a 1.7x better Born effective charge exactly where
+the physics is valid** -- 0.0373 e on polarizable frames vs `sr`'s 0.0620 --
+and is *worse* than the untrained `sr` over the full sweep (0.0915 vs
+0.0738). The full-sweep column is dominated by the 226 non-polarizable frames
+near dielectric breakdown, where all three models are equally poor and the
+label itself is least trustworthy. The dataset README's advice to mask on
+`polarizable` is doing real work here: on the unmasked number the target
+looks harmful, on the masked one it clearly helps.
+
+Note also that `sr`, which never saw `bec_z` or `work_function`, already
+reaches 0.062 e -- so as with the work function, charge conditioning plus
+energy/force supervision recovers much of the derivative structure unaided.
+
 **Born effective charges are learnable.** `bec_z` R² went -0.2% (epoch 2) →
 82% (22) → 97.0% (200), on a finite-difference label damped by ≥15% carrying
 only ~8% of the loss. All four targets converged simultaneously; supervising
