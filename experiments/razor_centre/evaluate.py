@@ -67,7 +67,11 @@ SPLITS = [
 COLORS = {"sr": "steelblue", "sr-wf": "seagreen", "sr-wf-bec": "rebeccapurple"}
 POLARIZABLE_COLORS = {True: "steelblue", False: "darkorange"}
 
-BATCH_SIZE = 32
+# 8, not razor's 32: sr-wf-bec's model carries predict_bec, and the
+# jvp(jvp(energy)) path for d2E/dr dq holds far more live intermediates than a
+# plain forward+backward. At 32 it reached 36.7 GB and OOM'd on an A40 (48 GB).
+# Evaluation is not throughput-critical, so trade batch size for headroom.
+BATCH_SIZE = 8
 
 # Points drawn in the force parity scatter (RMSE is always over all of
 # them). ~400k components for valid would make an unopenable PDF.
