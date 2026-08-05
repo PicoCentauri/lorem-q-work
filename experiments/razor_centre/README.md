@@ -125,4 +125,54 @@ installed on the local machine.
 
 ## Results
 
-_TBD -- not yet trained._
+All three variants trained to the full 200 epochs. Converged **validation**
+RMSE (last validation block, epoch 200):
+
+| variant | energy | forces | work function | bec_z | runtime |
+|---|---|---|---|---|---|
+| `sr` | **0.746 meV/atom** | **25.2 meV/Å** | -- | -- | 6h09m |
+| `sr-wf` | 1.478 meV/atom | 47.2 meV/Å | 0.123 V | -- | 6h07m |
+| `sr-wf-bec` | R² 99.79 | R² 99.47 | R² 98.90 | **R² 96.96** | 13h23m |
+
+(`sr-wf-bec` is quoted as R² because its post-training test collation crashed
+before the RMSE table was written -- see below. Its checkpoints are intact.)
+
+**Centre-only training is competitive.** Against `../razor/sr`, which sees
+2.25x more data (10,931 vs 4,860 frames), `sr` here is *better* on energy
+(0.746 vs 0.855 meV/atom) and 7% worse on forces (25.2 vs 23.5), in 6h
+instead of 14h. The off-stencil frames make `∂E/∂q` learnable but the
+distribution distortion they introduce costs little to remove.
+
+**The work function is essentially dataset-independent**: 0.123 V here vs
+0.121 V on the full stencil, against a 1.36 V label spread. The centre frames
+alone are enough to learn `dE/dq`, despite carrying none of the off-stencil
+(r, q) pairs that make it identifiable in principle.
+
+**The work-function target costs ~1.9x on both energy and forces** at weight
+0.15, matching `../razor/`. See that README -- the weight is too high, and a
+0.05 / 0.02 sweep is the follow-up.
+
+**Born effective charges are learnable.** `bec_z` R² went -0.2% (epoch 2) →
+82% (22) → 97.0% (200), on a finite-difference label damped by ≥15% carrying
+only ~8% of the loss. All four targets converged simultaneously; supervising
+`∂²E/∂r∂q` did not destabilise the others.
+
+### `sr-wf-bec` post-training crash
+
+Training completed all 200 epochs (13h23m, 94% GPU) and every checkpoint was
+written. The job then failed in `predict_and_collate` on the test splits:
+
+```
+INTERNAL: RET_CHECK failure (config_assigner.cc:403) !candidates.empty()
+Autotuning failed for HLO: f32[4,49,2048] ... "kind":"__triton_gemm"
+... "device_type":"DEVICE_TYPE_INVALID"  No configs could be compiled.
+op_name=".../Lorem._bec_z/jvp(jvp(Lorem.energy))/..."
+```
+
+This is an XLA autotuner failure, not a modelling bug: the test splits (34 and
+260 frames) produce a trailing padded batch shape training never generated, so
+the `_bec_z` double-JVP kernel had to be compiled fresh and Triton's GEMM
+autotuner found no viable config. `evaluate.py` is unaffected in principle --
+it computes `dE/dq` with its own `jax.grad` -- but the evaluate job exports
+`--xla_gpu_autotune_level=0` as a guard, since it loads a `predict_bec` model.
+A rerun of the training job would want the same flag.

@@ -188,7 +188,34 @@ polarizable window.
 
 ## Results so far
 
-_TBD -- not yet trained._
+All three variants trained to the full 200 epochs. Converged **validation**
+RMSE (last validation block, epoch ~198; the test-sweep numbers come from
+`evaluate.py`):
+
+| variant | energy | forces | work function | runtime |
+|---|---|---|---|---|
+| `sr` | 0.855 meV/atom | 23.5 meV/Å | -- | 13h50m |
+| `lr` | 0.777 meV/atom | **20.3 meV/Å** | -- | 14h15m |
+| `sr-wf` | 1.606 meV/atom | 40.6 meV/Å | **0.121 V** | 13h51m |
+
+R²: `sr` 99.93/99.89, `lr` 99.95/99.92, `sr-wf` 99.77/99.68/99.20.
+
+**The Ewald head helps forces.** `lr` is the best force model at 20.3 meV/Å,
+14% better than `sr` -- notable given `max_degree_lr: 0` means monopole-only,
+i.e. the equivariant long-range messages that are Lorem's headline
+contribution are switched off. Worth an `lmax_lr` ablation.
+
+**Training on the work function costs accuracy at weight 0.15.** `sr-wf` is
+~1.9x worse on energy and ~1.7x worse on forces than `sr`, and buys `dE/dq`
+at 0.121 V against a 1.36 V label spread. The same trade reproduces on
+`../razor_centre/` (1.9x / 1.9x), so this is the weight, not a quirk of one
+dataset -- 0.15 was picked to match the force term's *initial* contribution,
+which was too aggressive. A sweep at 0.05 / 0.02 is the obvious follow-up.
+
+**Watch the warmup transient, not the mid-training numbers.** `sr-wf`'s force
+R² was 1.5% at epoch 2 and 98.8% by epoch 34; its energy looked 5x *better*
+than `sr` at epoch 34 and ended up 1.9x worse. Single mid-training validation
+snapshots on this dataset are close to meaningless.
 
 ## Next experiments
 
