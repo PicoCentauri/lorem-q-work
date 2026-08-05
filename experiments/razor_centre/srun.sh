@@ -23,11 +23,13 @@ source ~/venv/lorem-wf/bin/activate
 
 export PYTHONUNBUFFERED=1
 
-# sr-wf-bec's model.yaml carries predict_bec, so evaluate.py loading it will
-# trace the same jvp(jvp(energy)) path whose Triton GEMM autotuning blew up at
-# the end of the training run ("device_type: DEVICE_TYPE_INVALID, no configs
-# could be compiled") on a padded batch shape it had not seen. Evaluation is
-# short, so trading autotuning for reliability costs nothing here.
-export XLA_FLAGS="--xla_gpu_autotune_level=0"
+# XLA's Triton GEMM autotuner fails on this jaxlib build with
+# device_type "DEVICE_TYPE_INVALID" -- it cannot identify the GPU, so it has
+# no candidate configs and dies ("Autotuning failed", or "No supported config
+# found" if autotuning is merely switched off, which is not the same fix).
+# Seen on both a40 (these evaluate jobs) and a100 (sr-wf-bec's post-training
+# collation), so it is the Triton path rather than a specific card. Routing
+# those fusions to cuBLAS instead avoids the autotuner entirely.
+export XLA_FLAGS="--xla_gpu_enable_triton_gemm=false"
 
 python3 evaluate.py
