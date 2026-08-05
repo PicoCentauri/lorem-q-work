@@ -245,18 +245,26 @@ snapshots on this dataset are close to meaningless.
 
 ## Next experiments
 
-1. **`experiments/razor_centre/`** -- train only on centre frames
-   (`bias_charge == q_MD`), i.e. a split of `razor_centre.xyz`, removing the
-   off-equilibrium (geometry, charge) pairs described above. Roughly 5,390 +
-   599 structures, so ~3x less data than here; the comparison against this
-   folder's `sr`/`lr` is the point. Note `razor_centre.xyz` overlaps
-   `razor_train.xyz`/`razor_val.xyz` on the same (r, q) points (it just carries
-   extra columns), so it must not be added as extra data on top of this
-   experiment -- it replaces it.
-2. **`lr-wf`** -- the long-range counterpart of `sr-wf/` (see "Work-function
-   supervision" above), once `sr-wf` shows whether the extra target helps.
-3. **`sr-wf-bec` / `lr-wf-bec`** -- additionally supervise `bec_z` (`∂F/∂q`).
-   Use with caution: per the dataset's source documentation it is a
-   finite-difference estimate damped by ≥15%, so mask on `polarizable`, weight
-   it low, and validate against `razor_test.xyz`, whose `bec_z` comes from a
-   13-point spline. See `lorem/models/bec.py`.
+**Done since this list was written:** `experiments/razor_centre/` exists and
+its `sr`, `sr-wf` and `sr-wf-bec` variants have all trained -- see that
+folder's README for the cross-folder comparison. The headline is that
+centre-only training is *worse* across the board, so the off-stencil frames
+earn their place.
+
+1. **Work-function weight sweep** -- the clearest open question. 0.15 costs
+   ~1.9x on energy and ~1.7x on forces here, and was chosen to match the force
+   term's *initial* contribution, which turned out too aggressive. Try 0.05
+   and 0.02 and find where `dE/dq` is still learned but E/F recover. Cheap on
+   `../razor_centre/` at 6h a run.
+2. **`lr-wf`, and an `lmax_lr` ablation** -- `lr` is the best model here on
+   all three metrics *and* reaches 0.181 V on the work function without ever
+   training on it, all with `max_degree_lr: 0` (monopole-only). Both the
+   long-range counterpart of `sr-wf/` and simply raising `lmax_lr` to the
+   paper's default of 2 look more promising than pushing the work-function
+   weight.
+3. **`bec_z` on the full stencil** -- `../razor_centre/sr-wf-bec/` shows it
+   reaches 0.037 e on polarizable frames and helps `dE/dq` rather than
+   competing with it. Worth repeating here, where the extra off-stencil data
+   should make the derivative targets easier. Note this folder's
+   `evaluate.py` does not score `bec_z`; `../razor_centre/evaluate.py` does,
+   and that code can be lifted across.
