@@ -190,7 +190,7 @@ comparable. Validation split, RMSE:
 | `sr-wf` | centre only | 1.98 | 52.1 | 0.243 |
 | `sr-wf-bec` | centre only | 1.91 | 56.3 | 0.202 |
 
-**Centre-only training is worse across the board**, by 27% on energy, 35% on
+**Centre-only training is worse across the board** at equal epochs -- by 27% on energy, 35% on
 forces and 84% on the work function.
 
 > **Caveat: this comparison is confounded by training length, and the size of
@@ -214,14 +214,49 @@ forces and 84% on the work function.
 > The fix is to match gradient updates rather than epochs, the convention the
 > group's own benchmarking paper uses (arXiv 2602.22931, SI §S-II: "it is
 > important to train models with a similar number of gradient updates, where
-> GU = epochs x dataset size / batch size"). That means
-> `max_epochs = 200 x 10931/4860 ≈ 450` here, giving 145,800 updates against
-> razor's 145,700, with the cosine annealing over the matched budget.
-> Estimated runtime 13h50m for `sr` -- but ~30h for `sr-wf-bec`, which does
-> not fit the 24h limit and would need a restart path.
->
-> **Until that control is run, read the row above as an upper bound on the
-> data effect, not a measurement of it.**
+> GU = epochs x dataset size / batch size"). `sr-450ep/` does exactly that:
+> `max_epochs 450`, `warmup_epochs 22`, giving 145,800 updates against
+> razor's 145,700 with the cosine annealing over the matched budget.
+> Everything else is identical to `sr/`.
+
+### Resolved: it was about half training length, half data
+
+`sr-450ep/` ran to 450 epochs in 13h39m. On the common evaluation set
+(`razor_val.xyz`, polarizable, n=1218):
+
+| variant | updates | energy | forces | work function |
+|---|---|---|---|---|
+| `../razor/sr` | 145,700 | **0.82** | **23.56** | **0.236** |
+| `sr` | 64,800 | 1.04 | 31.93 | 0.434 |
+| `sr-450ep` | 145,800 | 0.92 | 26.32 | 0.313 |
+
+Gap to `../razor/sr`, before and after matching the budget:
+
+| | energy | forces | work function |
+|---|---|---|---|
+| at 200 epochs | +27% | +36% | +84% |
+| at matched updates | **+12%** | **+12%** | **+33%** |
+
+**Matching the update budget closes between half and two thirds of every
+gap, and a real data effect survives underneath.** So both readings were
+partly right: centre-only training genuinely is worse, but by 12% on energy
+and forces rather than 27-36%, and the earlier numbers were substantially
+inflated by the shorter schedule.
+
+The work function keeps the largest residual gap (+33%), which is consistent
+with the argument that the off-stencil frames are what make `∂E/∂q`
+identifiable -- that part is about the data and does not go away with more
+training.
+
+`sr-450ep` also improves everything on the test sweep's polarizable frames
+(E 1.04, F 26.18, WF 0.356, `bec_z` 0.0518, against `sr`'s 1.09 / 31.04 /
+0.440 / 0.0620), so this is not a validation-set artefact.
+
+Two consequences worth carrying forward: **`sr-wf` and `sr-wf-bec` are also
+undertrained by the same factor**, so their comparisons against `sr` are
+internally consistent but their absolute numbers are not comparable with
+`../razor/`'s; and at ~30h a matched-update `sr-wf-bec` does not fit the 24h
+limit, so it would need a restart path.
 
 **The off-stencil frames matter for `∂E/∂q`, as originally argued.** Removing
 them doubles the work-function error, both for the models that train on it
