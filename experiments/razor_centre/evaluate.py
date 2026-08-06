@@ -55,7 +55,7 @@ from marathon.io import from_dict, read_msgpack, read_yaml
 EPSILON_0 = 0.005526349406
 
 DATA = "../../datasets/razor"
-VARIANTS = ["sr", "sr-wf", "sr-wf-bec"]
+VARIANTS = ["sr", "sr-450ep", "sr-wf", "sr-wf-bec"]
 # the summed-R2 checkpoint is named after the targets it covers -- "R2_E+F"
 # for energy+forces, "R2_E+F+W" once the work function is trained on,
 # "R2_E+F+W+B" with the Born effective charges on top. Resolve it per variant
@@ -71,7 +71,12 @@ SPLITS = [
     ("test_sweep", "razor_test", False),
 ]
 
-COLORS = {"sr": "steelblue", "sr-wf": "seagreen", "sr-wf-bec": "rebeccapurple"}
+COLORS = {
+    "sr": "steelblue",
+    "sr-450ep": "darkorange",
+    "sr-wf": "seagreen",
+    "sr-wf-bec": "rebeccapurple",
+}
 POLARIZABLE_COLORS = {True: "steelblue", False: "darkorange"}
 
 # 8, not razor's 32: sr-wf-bec's model carries predict_bec, and the
