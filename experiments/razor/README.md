@@ -112,11 +112,55 @@ Two things to note if it is added anyway:
   this dataset -- a 145 eV/Å frame is a broken configuration, and relying on
   `polarizable` to catch it is incidental rather than by design.
 
+## Loss-weight sweep
+
+`sr-wf/`'s work-function weight of 0.15 puts the work function at **52% of the
+entire loss** and cost ~1.9x on energy and ~1.7x on forces against `sr/`. Two
+runs look for a better point.
+
+This folder is the right place for the sweep rather than `../razor_centre/`,
+for two reasons. Its 200 epochs already *is* the converged,
+gradient-update-matched budget (10,931 frames -> 145,747 updates), so `sr/`
+and `sr-wf/` are usable endpoints as they stand and the curve costs two jobs
+rather than three. And the weight-to-share arithmetic is self-consistent here:
+`razor_centre`'s training pool has 32% less work-function variance (1.147 vs
+1.688) because it carries one charge per structure, so the same nominal
+weight would mean a different share there.
+
+Shares from `razor_train`'s own polarizable pool (E 0.00140, F 0.47330,
+W 1.68757):
+
+| variant | E : F : W | E% | F% | W% |
+|---|---|---|---|---|
+| `sr` | 0.5 : 0.5 : 0 | 0.3 | 99.7 | 0 |
+| `sr-wf0.05` | 0.5 : 0.5 : 0.05 | 0.2 | 73.6 | **26.2** |
+| `sr-e100-wf0.1` | 100 : 1 : 0.1 | **17.9** | 60.5 | 21.6 |
+| `sr-wf` | 0.5 : 0.5 : 0.15 | 0.1 | 48.2 | **51.6** |
+
+Two questions, one run each:
+
+- **`sr` -> `sr-wf0.05` -> `sr-wf`** is the work-function weight on its own at
+  fixed energy:force -- a 0% / 26% / 52% curve with an exact control at each
+  end.
+- **`sr-wf0.05` -> `sr-e100-wf0.1`** holds the work-function share roughly
+  fixed (26% -> 22%) and moves energy from 0.2% to 17.9%, isolating the
+  energy axis. The 0.1 rather than 0.05 is deliberate: it is what keeps the
+  work-function sides comparable.
+
+Testing the energy axis at all is motivated by an asymmetry: **forces
+constrain `∂E/∂r` and say nothing about `∂E/∂q`**. In a charge-conditioned
+model the energy term is the only thing besides the work function itself that
+constrains the charge direction, so it may matter more here than in a plain
+MLIP -- where energy at 0.2% of the loss still reaches R² 99.9% and is
+evidently almost free.
+
+Both use `lorem.LoremQ`.
+
 ## Layout
 
 - `prepare.py` -- builds `data/` from `../../datasets/razor/*.xyz`. Run
   locally and synced to the cluster, not re-run per job.
-- `sr/`, `lr/`, `sr-wf/` -- one experiment dir per variant: `model.yaml` +
+- `sr/`, `lr/`, `sr-wf/`, `sr-wf0.05/`, `sr-e100-wf0.1/` -- one experiment dir per variant: `model.yaml` +
   `settings.yaml` + `srun.sh`.
 - `evaluate.py` -- energy / force / work-function parity plots with RMSE, on
   `valid` and `test_sweep`, for both variants.

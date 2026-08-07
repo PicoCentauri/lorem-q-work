@@ -1,0 +1,40 @@
+train: "data/train"
+valid: "data/valid"
+test_datasets:
+  test: ["data/test", true]
+  test_sweep: ["data/test_sweep", true]
+seed: 42
+batcher:
+  batch_size: 16
+  coarse_strategy: powers_of_4
+  size_strategy: powers_of_4
+  fine_strategy: powers_of_4
+# energy/forces kept at the house 0.5/0.5 so `../sr/` is an exact control.
+# work_function weight is set from the validation-set variances so the new
+# term enters at the same magnitude as the force term at initialisation:
+#   var(F) = 0.521, var(WF) = 1.852 (polarizable frames)
+#   0.5 * 0.521 = 0.261  vs  0.15 * 1.852 = 0.278
+# At 0.5 it would have been 0.926, i.e. 3.6x the force term.
+# The energy axis. Work-function share close to sr-wf0.05/ (21.6% vs 26.2%)
+# while energy moves from 0.2% of the loss to 17.9%, so the pair isolates
+# energy weight instead of confounding it with the work function. 0.1 rather
+# than 0.05 is what keeps the work-function sides comparable.
+#
+# Worth a run because forces constrain dE/dr and say nothing about dE/dq: in
+# a charge-conditioned model the energy term is the only thing besides the
+# work function itself that constrains the charge direction. The argument
+# does not apply to a plain MLIP, where energy at 0.2% of the loss still
+# reaches R2 99.9%.
+loss_weights: {"energy": 100.0, "forces": 1.0, "work_function": 0.1}
+checkpointers: full
+optimizer: muon
+valid_every_epoch: 2
+decay_style: warmup_cosine
+warmup_epochs: 10
+start_learning_rate: 2e-4
+gradient_clip: 1.0
+max_epochs: 200
+benchmark_pipeline: True
+use_wandb: False
+default_matmul_precision: "float32"
+worker_count: 4

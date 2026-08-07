@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=rc-wf005
+#SBATCH --job-name=razor-wf005
 #SBATCH --output=slurm.out
 #SBATCH --nodes 1
 #SBATCH --ntasks 1
@@ -25,10 +25,10 @@ module load cuda/13.2.0
 # reentrancy fix landed in 3.12.1. the spack modulepath must be loaded first.
 module load 000-all-spack-pkgs/1.1.1-alex
 module load python/3.13.8-gcc11.5.0-apqbs3h
-# The whole razor_centre folder runs on the charge-conditioning branch of
-# lorem-jax (built from ~/lorem-jax-wf), so all three variants here share one
-# lorem version and differ only in loss_weights -- sr/ is a clean control for
-# sr-wf/ and sr-wf-bec/ without a version confound.
+# NOT ~/venv/lorem313: this variant needs the charge-conditioning branch of
+# lorem-jax, where Lorem.predict exposes dE/dq as `work_function`. Built from
+# ~/lorem-jax-wf. The sr/ and lr/ runs stay on lorem313 so they remain a
+# clean control.
 source ~/venv/lorem-wf/bin/activate
 
 export PYTHONUNBUFFERED=1

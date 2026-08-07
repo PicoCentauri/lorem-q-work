@@ -1,0 +1,39 @@
+train: "data/train"
+valid: "data/valid"
+test_datasets:
+  test: ["data/test", true]
+  test_sweep: ["data/test_sweep", true]
+seed: 42
+batcher:
+  batch_size: 16
+  coarse_strategy: powers_of_4
+  size_strategy: powers_of_4
+  fine_strategy: powers_of_4
+# energy/forces kept at the house 0.5/0.5 so `../sr/` is an exact control.
+# work_function weight is set from the validation-set variances so the new
+# term enters at the same magnitude as the force term at initialisation:
+#   var(F) = 0.521, var(WF) = 1.852 (polarizable frames)
+#   0.5 * 0.521 = 0.261  vs  0.15 * 1.852 = 0.278
+# At 0.5 it would have been 0.926, i.e. 3.6x the force term.
+# Work-function weight sweep. 0.05 puts the work function at 26% of the loss
+# against sr-wf/'s 51% at 0.15, which cost ~1.9x on both energy and forces.
+# Energy:force stays at the house 0.5/0.5, so sr/ is an exact control and the
+# three runs sr/ -> here -> sr-wf/ give a 0% / 26% / 51% curve, all at the
+# same converged 200-epoch budget (145,747 gradient updates).
+#
+# Shares from razor_train's own polarizable pool (E 0.00140, F 0.47330,
+# W 1.68757) -- not razor_centre's, whose work-function variance is 32% lower
+# because it carries one charge per structure.
+loss_weights: {"energy": 0.5, "forces": 0.5, "work_function": 0.05}
+checkpointers: full
+optimizer: muon
+valid_every_epoch: 2
+decay_style: warmup_cosine
+warmup_epochs: 10
+start_learning_rate: 2e-4
+gradient_clip: 1.0
+max_epochs: 200
+benchmark_pipeline: True
+use_wandb: False
+default_matmul_precision: "float32"
+worker_count: 4

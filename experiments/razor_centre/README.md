@@ -21,8 +21,6 @@ less data.
 | `sr-wf/` | + `work_function` | supervises the autograd `dE/dq` |
 | `sr-wf-bec/` | + `bec_z` | additionally supervises the Born effective charge |
 | `sr-450ep/` | energy + forces | `sr/` with the budget matched to `../razor/sr/` in gradient updates, not epochs -- see the caveat under Results |
-| `sr-wf0.05-450ep/` | + `work_function` @ 0.05 | weight sweep, 450 ep |
-| `sr-e100-wf0.1-450ep/` | + `work_function` @ 0.1, energy @ 100 | energy-weight axis, 450 ep |
 
 `model.yaml` is identical across `sr/` and `sr-wf/`; `sr-wf-bec/` adds
 `predict_bec: True`. All three share one `data/`, so **only `loss_weights`
@@ -34,44 +32,6 @@ that exposes `dE/dq` and `bec_z`; `sr/` and `sr-450ep/` stay on plain
 `lorem.Lorem`, whose `predict` returns energy and forces only. Same
 architecture either way -- `LoremQ` inherits `__call__` untouched -- so the
 comparisons above are unaffected and checkpoints are weight-compatible.
-
-## Loss-weight sweep (450 epochs)
-
-`sr/` and `sr-wf/` differ by a work-function weight of 0.15, which put the
-work function at **51% of the entire loss** and cost ~1.9x on both energy and
-forces. These two runs look for a better point, at the converged
-gradient-update-matched budget (450 epochs / 22 warmup) rather than the 200
-epochs `sr/` and `sr-wf/` used -- so `sr-450ep/` is the control, not `sr/`.
-
-Shares are computed from validation variances (E 0.00111, F 0.52144,
-W 1.85230), which is what makes the bare weights comparable:
-
-| variant | weights E : F : W | E% | F% | W% | epochs |
-|---|---|---|---|---|---|
-| `sr` | 0.5 : 0.5 : 0 | 0.2 | 99.8 | 0 | 200 |
-| `sr-450ep` | 0.5 : 0.5 : 0 | 0.2 | 99.8 | 0 | **450** |
-| `sr-wf0.05-450ep` | 0.5 : 0.5 : 0.05 | 0.2 | 73.7 | 26.2 | **450** |
-| `sr-e100-wf0.1-450ep` | 100 : 1 : 0.1 | 13.6 | 63.8 | 22.7 | **450** |
-| `sr-wf` | 0.5 : 0.5 : 0.15 | 0.1 | 48.4 | 51.5 | 200 |
-
-Two questions, one run each:
-
-- **`sr-450ep` -> `sr-wf0.05-450ep`** moves the work function from 0% to 26%
-  of the loss at fixed energy:force. That is the work-function weight on its
-  own, with an exact control.
-- **`sr-wf0.05-450ep` -> `sr-e100-wf0.1-450ep`** holds the work-function
-  share roughly fixed (26% -> 23%) and moves energy from 0.2% to 13.6%. The
-  0.1 rather than 0.05 is deliberate: it is what makes the two comparable on
-  the work-function axis so the pair isolates energy.
-
-Worth testing the energy axis at all because **forces constrain `∂E/∂r` and
-say nothing about `∂E/∂q`**. In a charge-conditioned model the energy term is
-the only thing besides the work function itself that constrains the charge
-direction, so it may matter more here than in a plain MLIP -- where energy at
-0.2% of the loss still reaches R² 99.9% and is evidently nearly free.
-
-Note the 0.15 point is only available at 200 epochs. If the sweep suggests the
-optimum lies above 0.05, `sr-wf` wants rerunning at 450 to complete the curve.
 
 ## Splits
 
