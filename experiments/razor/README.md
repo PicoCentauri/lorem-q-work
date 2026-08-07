@@ -156,11 +156,49 @@ evidently almost free.
 
 Both use `lorem.LoremQ`.
 
+## Smaller models (set up, not yet run)
+
+`sr-small-l2/` and `sr-small-l3/` cut the model down, spending the angular
+budget on channels instead of degrees. Both keep `num_features: 64` and are
+run as a **pair**, for a reason given below.
+
+| variant | $d$ | $l_{\max}$ | $c$ | CG paths | CG ops | params |
+|---|---|---|---|---|---|---|
+| `sr` | 128 | 6 | 4 | 175 | 393k | 1.16 M |
+| `sr-small-l2` | 64 | 2 | **16** | 15 | 9.8k (0.03x) | 300k (0.26x) |
+| `sr-small-l3` | 64 | 3 | 8 | 34 | 27k (0.07x) | 295k (0.25x) |
+
+("CG ops" counts $\sum_{l_1l_2l_3}(2l_1{+}1)(2l_2{+}1)(2l_3{+}1)\times c$ over
+valid paths -- the $m_1,m_2$ contraction that dominates the forward pass.)
+
+The three knobs hit different costs, which is what makes the trade work:
+
+- **$l_{\max}$ 6 -> 2 collapses the CG cost ~40x** (175 valid paths -> 15).
+  This is the real speedup.
+- **$d$ 128 -> 64 cuts parameters ~4x**, since `Update` and
+  `RadialCoefficients` go as $d^2$.
+- **$c$ 4 -> 16 costs almost nothing** -- $c$ is linear in the CG kernel, and
+  it is being spent in the place that just got 40x cheaper.
+
+**Why a pair rather than one run.** `l2` and `l3` have near-identical
+parameter counts (300k vs 295k) and both are far cheaper than `sr`, but differ
+in angular resolution. If the small model loses accuracy, running only one
+leaves "less angular resolution" and "smaller everything" confounded.
+$l_{\max}=2$ is the more aggressive cut, though not unusual -- LOREM's default
+of 6 is high, and NequIP/MACE typically run 1-3.
+
+Loss weights stay at the house 0.5/0.5 for now so `sr/` is an exact control
+for the size change. The `sr-wf0.05` / `sr-e100-wf0.1` sweep settles the
+work-function weight separately; the loss *shares* come from label variances
+and so carry over to a smaller model unchanged, but the achievable
+work-function RMSE may not -- worth re-measuring rather than assuming.
+
 ## Layout
 
 - `prepare.py` -- builds `data/` from `../../datasets/razor/*.xyz`. Run
   locally and synced to the cluster, not re-run per job.
-- `sr/`, `lr/`, `sr-wf/`, `sr-wf0.05/`, `sr-e100-wf0.1/` -- one experiment dir per variant: `model.yaml` +
+- `sr/`, `lr/`, `sr-wf/`, `sr-wf0.05/`, `sr-e100-wf0.1/`, `sr-small-l2/`,
+  `sr-small-l3/` -- one experiment dir per variant: `model.yaml` +
   `settings.yaml` + `srun.sh`.
 - `evaluate.py` -- energy / force / work-function parity plots with RMSE, on
   `valid` and `test_sweep`, for both variants.

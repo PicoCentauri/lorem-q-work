@@ -1,0 +1,16 @@
+model:
+  lorem.Lorem:
+    # The hedge against sr-small-l2/. Near-identical parameter count (295k vs
+    # 300k) and still ~14x cheaper on CG than sr/, but keeps l=3. Run as a
+    # pair: if the small model loses accuracy, this separates "less angular
+    # resolution" from "smaller everything" -- with only one small model you
+    # cannot tell which change cost you.
+    cutoff: 5.0
+    max_degree_lr: 0
+    num_features: 64
+    max_degree: 3
+    num_radial: 16
+    num_message_passing: 1
+    num_spherical_features: 8
+    lr: false
+    initialize_node_features: True
