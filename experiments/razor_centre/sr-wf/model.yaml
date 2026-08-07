@@ -1,5 +1,5 @@
 model:
-  lorem.Lorem:
+  lorem.LoremQ:
     cutoff: 5.0
     max_degree_lr: 0
     num_features: 128

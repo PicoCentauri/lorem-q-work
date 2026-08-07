@@ -28,6 +28,12 @@ experiment folder rather than a suffix here, because it needs its own
 targets>]` sub-experiment names, so results stay directly comparable
 row-by-row across folders.
 
+`sr-wf/` uses `lorem.LoremQ`, the charge-aware subclass that exposes
+`dE/dq` (and `bec_z`); `sr/` and `lr/` stay on plain `lorem.Lorem`, whose
+`predict` returns energy and forces only. The architecture is identical --
+`LoremQ` inherits `__call__` untouched -- so this is purely about which
+outputs are meaningful, and checkpoints are weight-compatible either way.
+
 ## Data
 
 `prepare.py` builds four splits from the shipped extxyz files:

@@ -27,6 +27,12 @@ less data.
 (and that one model flag) differ** -- `sr/` is a clean control with no data or
 lorem-version confound.
 
+`sr-wf/` and `sr-wf-bec/` use `lorem.LoremQ`, the charge-aware subclass
+that exposes `dE/dq` and `bec_z`; `sr/` and `sr-450ep/` stay on plain
+`lorem.Lorem`, whose `predict` returns energy and forces only. Same
+architecture either way -- `LoremQ` inherits `__call__` untouched -- so the
+comparisons above are unaffected and checkpoints are weight-compatible.
+
 ## Splits
 
 `razor_centre.xyz` holds 5989 structures, which is exactly
