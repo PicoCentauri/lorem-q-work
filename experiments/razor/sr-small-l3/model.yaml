@@ -1,5 +1,5 @@
 model:
-  lorem.Lorem:
+  lorem.LoremQ:
     # The hedge against sr-small-l2/. Near-identical parameter count (295k vs
     # 300k) and still ~14x cheaper on CG than sr/, but keeps l=3. Run as a
     # pair: if the small model loses accuracy, this separates "less angular

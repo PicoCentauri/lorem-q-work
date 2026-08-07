@@ -187,11 +187,27 @@ leaves "less angular resolution" and "smaller everything" confounded.
 $l_{\max}=2$ is the more aggressive cut, though not unusual -- LOREM's default
 of 6 is high, and NequIP/MACE typically run 1-3.
 
-Loss weights stay at the house 0.5/0.5 for now so `sr/` is an exact control
-for the size change. The `sr-wf0.05` / `sr-e100-wf0.1` sweep settles the
-work-function weight separately; the loss *shares* come from label variances
-and so carry over to a smaller model unchanged, but the achievable
-work-function RMSE may not -- worth re-measuring rather than assuming.
+**They train on the work function too**, at weight 0.05 -- the same
+`loss_weights` as `sr-wf0.05/`, whose `settings.yaml` they match byte for
+byte. That makes **`sr-wf0.05/` the control**, not `sr/`: identical loss,
+identical data, only the model differs, so the comparison is the size change
+alone. Training on `dE/dq` also means these use `lorem.LoremQ` rather than
+`lorem.Lorem`.
+
+The 0.05 is provisional -- it is the sweep's mid point (26.2% of the loss
+against `sr-wf/`'s 51.6%) and should be revisited once the sweep lands. Since
+the shares come from label variances they are identical for a smaller model,
+but the achievable work-function RMSE may not be, and that is part of what
+these runs measure: a model with 3% of the CG work still has to represent a
+second derivative of the energy surface.
+
+So the three comparisons available are:
+
+| pair | isolates |
+|---|---|
+| `sr-wf0.05` vs `sr-small-l2` | model size, at fixed loss |
+| `sr-small-l2` vs `sr-small-l3` | angular resolution, at fixed size |
+| `sr` vs `sr-wf0.05` | the work-function target, at fixed model |
 
 ## Layout
 

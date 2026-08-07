@@ -1,5 +1,5 @@
 model:
-  lorem.Lorem:
+  lorem.LoremQ:
     # Small model, angular budget spent on channels rather than degrees.
     # max_degree 6 -> 2 collapses the CG cost ~40x (175 valid (l1,l2,l3) paths
     # -> 15), which is the dominant forward-pass cost; num_features 128 -> 64
