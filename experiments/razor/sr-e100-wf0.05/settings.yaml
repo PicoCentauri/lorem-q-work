@@ -1,0 +1,37 @@
+train: "data/train"
+valid: "data/valid"
+test_datasets:
+  test: ["data/test", true]
+  test_sweep: ["data/test_sweep", true]
+seed: 42
+batcher:
+  batch_size: 16
+  coarse_strategy: powers_of_4
+  size_strategy: powers_of_4
+  fine_strategy: powers_of_4
+# 100:1:0.05 -- the sweep's outcome. E 20.1%, F 67.8%, W 12.1% of the loss
+# (shares from razor_train's polarizable pool: E 0.00140, F 0.47330,
+# W 1.68757).
+#
+# Why these numbers, from the four-run sweep:
+#   - energy at 100 is what made sr-e100-wf0.1 beat the no-WF baseline on
+#     energy (0.806 vs sr's 0.855) while holding the work function at 0.115 V
+#   - the work function drops 0.1 -> 0.05 because force error tracks the
+#     *force share* of the loss (99.7% -> 23.5, 73.6% -> 32.6, 60.5% -> 33.7,
+#     48.2% -> 40.6 meV/A), so raising that share is the lever for forces
+#   - going below 0.05 on the work function is low-risk: 0.05 already gave the
+#     best work function of the sweep (0.1085 V) and tripling it to 0.15 made
+#     it *worse* (0.1214), so the curve is flat-to-falling above ~12%
+loss_weights: {"energy": 100.0, "forces": 1.0, "work_function": 0.05}
+checkpointers: full
+optimizer: muon
+valid_every_epoch: 2
+decay_style: warmup_cosine
+warmup_epochs: 10
+start_learning_rate: 2e-4
+gradient_clip: 1.0
+max_epochs: 200
+benchmark_pipeline: True
+use_wandb: False
+default_matmul_precision: "float32"
+worker_count: 4

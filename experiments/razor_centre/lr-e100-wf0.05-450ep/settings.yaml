@@ -1,0 +1,40 @@
+train: "data/train"
+valid: "data/valid"
+test_datasets:
+  test: ["data/test", true]
+  test_sweep: ["data/test_sweep", true]
+seed: 42
+batcher:
+  batch_size: 16
+  coarse_strategy: powers_of_4
+  size_strategy: powers_of_4
+  fine_strategy: powers_of_4
+# 100:1:0.05, the same nominal weights as ../razor/lr-e100-wf0.05/, at this
+# folder's 450-epoch / 22-warmup gradient-update-matched budget.
+#
+# The same weight is NOT the same loss share here. razor_centre's training
+# pool has 32% less work-function variance (1.147 vs 1.688) because it carries
+# one charge per structure, so:
+#
+#            E%     F%     W%
+#   razor   20.1   67.8   12.1
+#   here    23.8   68.0    8.3
+#
+# The *force* share matches almost exactly (67.8 vs 68.0), so the force
+# comparison across the two folders is clean. The work-function share is lower
+# here, so if the work function comes out worse than razor's that is partly
+# the weight and not only the smaller, centre-only training set. Weight 0.076
+# would match razor's 12.1% share if that comparison is wanted instead.
+loss_weights: {"energy": 100.0, "forces": 1.0, "work_function": 0.05}
+checkpointers: full
+optimizer: muon
+valid_every_epoch: 2
+decay_style: warmup_cosine
+warmup_epochs: 22
+start_learning_rate: 2e-4
+gradient_clip: 1.0
+max_epochs: 450
+benchmark_pipeline: True
+use_wandb: False
+default_matmul_precision: "float32"
+worker_count: 4
