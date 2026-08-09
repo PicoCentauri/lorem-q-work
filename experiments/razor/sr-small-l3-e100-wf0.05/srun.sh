@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=razor-sm-l3
+#SBATCH --job-name=razor-sm-l3-e100w005
 #SBATCH --output=slurm.out
 #SBATCH --nodes 1
 #SBATCH --ntasks 1

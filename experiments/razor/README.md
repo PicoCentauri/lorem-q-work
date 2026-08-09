@@ -156,19 +156,20 @@ evidently almost free.
 
 Both use `lorem.LoremQ`.
 
-## Smaller models (set up, not yet run)
+## Model-size comparison at the sweep's weights (set up, not yet run)
 
-`sr-small-l2/` and `sr-small-l3/` cut the model down, spending the angular
-budget on channels instead of degrees. Both keep `num_features: 64` and are
-run as a **pair**, for a reason given below.
+Three runs sharing **identical** `settings.yaml` -- `100 : 1 : 0.05`, all
+training on energy, forces and the work function -- so the *only* thing that
+varies is the model. `sr-e100-wf0.05/` is the full-size member and therefore
+the exact control for the two smaller ones.
 
 | variant | $d$ | $l_{\max}$ | $c$ | CG paths | CG ops | params |
 |---|---|---|---|---|---|---|
-| `sr` | 128 | 6 | 4 | 175 | 393k | 1.16 M |
-| `sr-small-l2` | 64 | 2 | **16** | 15 | 9.8k (0.03x) | 300k (0.26x) |
-| `sr-small-l3` | 64 | 3 | 8 | 34 | 27k (0.07x) | 295k (0.25x) |
+| `sr-e100-wf0.05` | 128 | 6 | 4 | 175 | 393k | 1.16 M |
+| `sr-small-l2-e100-wf0.05` | 64 | 2 | **16** | 15 | 9.8k (0.03x) | 300k (0.26x) |
+| `sr-small-l3-e100-wf0.05` | 64 | 3 | 8 | 34 | 27k (0.07x) | 295k (0.25x) |
 
-("CG ops" counts $\sum_{l_1l_2l_3}(2l_1{+}1)(2l_2{+}1)(2l_3{+}1)\times c$ over
+("CG ops" is $\sum_{l_1l_2l_3}(2l_1{+}1)(2l_2{+}1)(2l_3{+}1)\times c$ over
 valid paths -- the $m_1,m_2$ contraction that dominates the forward pass.)
 
 The three knobs hit different costs, which is what makes the trade work:
@@ -178,43 +179,24 @@ The three knobs hit different costs, which is what makes the trade work:
 - **$d$ 128 -> 64 cuts parameters ~4x**, since `Update` and
   `RadialCoefficients` go as $d^2$.
 - **$c$ 4 -> 16 costs almost nothing** -- $c$ is linear in the CG kernel, and
-  it is being spent in the place that just got 40x cheaper.
+  it is spent in the place that just got 40x cheaper.
 
-**Why a pair rather than one run.** `l2` and `l3` have near-identical
-parameter counts (300k vs 295k) and both are far cheaper than `sr`, but differ
-in angular resolution. If the small model loses accuracy, running only one
-leaves "less angular resolution" and "smaller everything" confounded.
+**Why `l2` and `l3` are a pair.** Their parameter counts are within 2% of each
+other, so if the small model loses accuracy, running only one would leave
+"less angular resolution" confounded with "smaller everything".
 $l_{\max}=2$ is the more aggressive cut, though not unusual -- LOREM's default
-of 6 is high, and NequIP/MACE typically run 1-3.
+of 6 is high and NequIP/MACE typically run 1-3.
 
-**They train on the work function too**, at weight 0.05 -- the same
-`loss_weights` as `sr-wf0.05/`, whose `settings.yaml` they match byte for
-byte. That makes **`sr-wf0.05/` the control**, not `sr/`: identical loss,
-identical data, only the model differs, so the comparison is the size change
-alone. Training on `dE/dq` also means these use `lorem.LoremQ` rather than
-`lorem.Lorem`.
-
-The 0.05 is provisional -- it is the sweep's mid point (26.2% of the loss
-against `sr-wf/`'s 51.6%) and should be revisited once the sweep lands. Since
-the shares come from label variances they are identical for a smaller model,
-but the achievable work-function RMSE may not be, and that is part of what
-these runs measure: a model with 3% of the CG work still has to represent a
-second derivative of the energy surface.
-
-So the three comparisons available are:
-
-| pair | isolates |
-|---|---|
-| `sr-wf0.05` vs `sr-small-l2` | model size, at fixed loss |
-| `sr-small-l2` vs `sr-small-l3` | angular resolution, at fixed size |
-| `sr` vs `sr-wf0.05` | the work-function target, at fixed model |
+On the weights: the shares (E 20.1%, F 67.8%, W 12.1%) come from label
+variances and so are model-independent -- but whether a model with 3% of the
+CG work can still represent `dE/dq` as well is exactly what these measure.
 
 ## Layout
 
 - `prepare.py` -- builds `data/` from `../../datasets/razor/*.xyz`. Run
   locally and synced to the cluster, not re-run per job.
-- `sr/`, `lr/`, `sr-wf/`, `sr-wf0.05/`, `sr-e100-wf0.1/`, `sr-small-l2/`,
-  `sr-small-l3/` -- one experiment dir per variant: `model.yaml` +
+- `sr/`, `lr/`, `sr-wf/`, `sr-wf0.05/`, `sr-e100-wf0.1/`, `sr-small-l2-e100-wf0.05/`,
+  `sr-small-l3-e100-wf0.05/` -- one experiment dir per variant: `model.yaml` +
   `settings.yaml` + `srun.sh`.
 - `evaluate.py` -- energy / force / work-function parity plots with RMSE, on
   `valid` and `test_sweep`, for both variants.
