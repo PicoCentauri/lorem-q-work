@@ -1,0 +1,23 @@
+model:
+  lorem.LoremQ:
+    # Breaks the channel confound in the first small pair. sr-small-l2/ (l=2,
+    # c=16) beat sr-small-l3/ (l=3, c=8) on all three targets, but those two
+    # differ in *both* max_degree and num_spherical_features -- they were
+    # matched on parameter count (300k vs 295k), not on channels, so "l=3
+    # bought nothing" and "c=8 was too few" are indistinguishable from that
+    # pair alone.
+    #
+    # This run is sr-small-l2/ with max_degree 2 -> 3 and nothing else changed,
+    # so l2-vs-l3c16 is a clean one-variable contrast. It costs more than
+    # either: CG work goes as c x (paths), and 16 channels over l=3's 3436
+    # ops/channel is ~5.6x sr-small-l2/ -- roughly 480k parameters. That is the
+    # price of the answer, not a candidate production model.
+    cutoff: 5.0
+    max_degree_lr: 0
+    num_features: 64
+    max_degree: 3
+    num_radial: 16
+    num_message_passing: 1
+    num_spherical_features: 16
+    lr: false
+    initialize_node_features: True
