@@ -1,0 +1,19 @@
+model:
+  lorem.LoremQ:
+    # d64 l2 c8 -- the fourth corner of the size 2x2. sr-small-l2 (l2, c16) and
+    # sr-small-l3 (l3, c8) were matched on parameter count, so max_degree and
+    # num_spherical_features moved together and neither effect was isolated.
+    # Against those two this separates both: channels at fixed l=2 (vs l2c16)
+    # and degree at fixed c=8 (vs l3c8). Cheapest cell of the grid, 8 x 615 =
+    # 4920 CG ops against l2c16's 9840.
+    # short-range control for the lr run beside it: byte-identical apart from
+    # the lr flag, so the pair isolates the Ewald head.
+    cutoff: 5.0
+    max_degree_lr: 0
+    num_features: 64
+    max_degree: 2
+    num_radial: 16
+    num_message_passing: 1
+    num_spherical_features: 8
+    lr: false
+    initialize_node_features: True
