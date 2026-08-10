@@ -55,7 +55,30 @@ from marathon.io import from_dict, read_msgpack, read_yaml
 EPSILON_0 = 0.005526349406
 
 DATA = "../../datasets/razor"
-VARIANTS = ["sr", "lr", "sr-wf"]
+# The model-size / training-length comparison, all at loss weights
+# 100:1:0.05 with byte-identical settings.yaml apart from max_epochs -- so
+# the only things varying across these four are the architecture and the
+# schedule length. The earlier weight-sweep runs (sr, lr, sr-wf, sr-wf0.05,
+# sr-e100-wf0.1) are deliberately left out: they answer a question that is
+# already settled, and mixing them in would put four different loss weights
+# in one figure. sr-small-l3c16-e100-wf0.05 is excluded too -- it was
+# cancelled after ~2 epochs and its checkpoint is meaningless.
+VARIANTS = [
+    "sr-e100-wf0.05",
+    "sr-small-l2-e100-wf0.05",
+    "sr-small-l3-e100-wf0.05",
+    "sr-small-l2-e100-wf0.05-300ep",
+]
+
+# Row labels for the figure: the directory names encode the loss weights,
+# which are constant here, so they are all prefix and no signal. Name the
+# axis that actually varies instead.
+LABELS = {
+    "sr-e100-wf0.05": "d128 l6 c4\n200 ep",
+    "sr-small-l2-e100-wf0.05": "d64 l2 c16\n200 ep",
+    "sr-small-l3-e100-wf0.05": "d64 l3 c8\n200 ep",
+    "sr-small-l2-e100-wf0.05-300ep": "d64 l2 c16\n300 ep",
+}
 # the summed-R2 checkpoint is named after the targets it covers -- "R2_E+F"
 # for energy+forces, "R2_E+F+W" once the work function is trained on,
 # "R2_E+F+W+B" with the Born effective charges on top. Resolve it per variant
@@ -71,7 +94,12 @@ SPLITS = [
     ("test_sweep", "razor_test", False),
 ]
 
-COLORS = {"sr": "steelblue", "lr": "tomato", "sr-wf": "seagreen"}
+COLORS = {
+    "sr-e100-wf0.05": "steelblue",
+    "sr-small-l2-e100-wf0.05": "seagreen",
+    "sr-small-l3-e100-wf0.05": "tomato",
+    "sr-small-l2-e100-wf0.05-300ep": "rebeccapurple",
+}
 POLARIZABLE_COLORS = {True: "steelblue", False: "darkorange"}
 
 # 8, not 32: this script now computes bec_z via jvp(jvp(energy)) for every
@@ -286,7 +314,7 @@ def metrics(d):
 
 def print_table(all_rows):
     header = (
-        f"{'split':<12}{'variant':<12}{'subset':<14}"
+        f"{'split':<12}{'variant':<32}{'subset':<14}"
         f"{'E RMSE':>10}{'E MAE':>10}{'F RMSE':>10}{'F MAE':>10}"
         f"{'WF RMSE':>10}{'WF MAE':>10}{'Z RMSE':>10}{'Z MAE':>10}{'n':>8}"
     )
@@ -307,7 +335,7 @@ def print_table(all_rows):
             for label, rs in subsets:
                 m = metrics(collect(rs))
                 print(
-                    f"{split:<12}{v:<12}{label:<14}"
+                    f"{split:<12}{v:<32}{label:<14}"
                     f"{m['e_rmse']:>10.2f}{m['e_mae']:>10.2f}"
                     f"{m['f_rmse']:>10.2f}{m['f_mae']:>10.2f}"
                     f"{m['wf_rmse']:>10.4f}{m['wf_mae']:>10.4f}"
@@ -419,14 +447,15 @@ def plot_split(all_rows, split, name):
         # variant name once per row, outside the axes, so it can't collide
         # with the row above's x-label
         axes[row][0].annotate(
-            v,
+            LABELS.get(v, v),
             xy=(-0.42, 0.5),
             xycoords="axes fraction",
             rotation=90,
             ha="center",
             va="center",
-            fontsize=8,
+            fontsize=7,
             fontweight="bold",
+            linespacing=1.4,
         )
 
     fig.suptitle(f"razor -- {split}")

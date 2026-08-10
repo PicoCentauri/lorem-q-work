@@ -19,7 +19,11 @@ module load cuda/13.2.0
 # deadlock; the spack modulepath must be loaded before the python module.
 module load 000-all-spack-pkgs/1.1.1-alex
 module load python/3.13.8-gcc11.5.0-apqbs3h
-source ~/venv/lorem313/bin/activate
+# lorem-wf, not lorem313: every variant evaluated here was trained as
+# lorem.LoremQ, and load_checkpoint deserialises that class name straight out
+# of the checkpoint's model.yaml. lorem313 predates LoremQ and would fail on
+# the very first from_dict.
+source ~/venv/lorem-wf/bin/activate
 
 export PYTHONUNBUFFERED=1
 

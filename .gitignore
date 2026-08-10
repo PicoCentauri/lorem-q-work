@@ -18,7 +18,15 @@ __pycache__/
 # settings.yaml, prepare.py, README.md) stay tracked.
 experiments/*/data/
 experiments/*/*/run/
-experiments/*/evaluate_rows.json
+# glob, not the bare name: the cache gets renamed aside (evaluate_rows.json
+# .pre-<round>) when a round is re-evaluated, and a suffix defeated the exact
+# match once already -- it is 55 MB.
+experiments/*/evaluate_rows.json*
+# SLURM stdout, one per experiment dir and one at each folder's top level for
+# the evaluate job. Same category as the run/ outputs above: regenerable, and
+# the training logs run to hundreds of KB each.
+experiments/*/slurm.out
+experiments/*/*/slurm.out
 
 # hpc-tools stuff
 Makefile

@@ -393,17 +393,24 @@ folder's README for the cross-folder comparison. The headline is that
 centre-only training is *worse* across the board, so the off-stencil frames
 earn their place.
 
-1. **Work-function weight sweep** -- the clearest open question. 0.15 costs
-   ~1.9x on energy and ~1.7x on forces here, and was chosen to match the force
-   term's *initial* contribution, which turned out too aggressive. Try 0.05
-   and 0.02 and find where `dE/dq` is still learned but E/F recover. Cheap on
-   `../razor_centre/` at 6h a run.
-2. **`lr-wf`, and an `lmax_lr` ablation** -- `lr` is the best model here on
-   all three metrics *and* reaches 0.181 V on the work function without ever
-   training on it, all with `max_degree_lr: 0` (monopole-only). Both the
-   long-range counterpart of `sr-wf/` and simply raising `lmax_lr` to the
-   paper's default of 2 look more promising than pushing the work-function
-   weight.
+1. ~~**Work-function weight sweep**~~ -- **done**; the outcome is
+   `100 : 1 : 0.05`, which is what every run in the model-size section above
+   uses. The follow-on size/length comparison is also done.
+2. **`lr-wf`, and an `lmax_lr` ablation** -- now the highest-value run
+   outstanding. `lr/` still has the best charge response of anything in this
+   folder (Φ 0.209, `bec_z` 0.0270 on the test sweep's polarizable frames),
+   beating every model in the size comparison, and it does so with
+   `max_degree_lr: 0`. `lr-e100-wf0.05/` is set up and deferred, not run.
+   Note also that the equivariant Ewald features currently update only the
+   scalar features `P` -- `nodes_spherical` is never reassigned in the
+   long-range block, so the potentials enter as invariants via `Norm` and
+   `S` is read-only there. At `max_degree_lr: 0` that path degenerates to a
+   per-channel scalar rescaling of `S`, so raising `lmax_lr` is what switches
+   the equivariant long-range machinery on at all.
+   On the validation split `lr` also reaches 0.181 V on the work function
+   without ever training on it. Both the long-range counterpart of `sr-wf/`
+   and raising `lmax_lr` to the paper's default of 2 look more promising than
+   pushing the work-function weight, or than shrinking the model further.
 3. **`bec_z` on the full stencil** -- `../razor_centre/sr-wf-bec/` shows it
    reaches 0.037 e on polarizable frames and helps `dE/dq` rather than
    competing with it. Worth repeating here, where the extra off-stencil data
