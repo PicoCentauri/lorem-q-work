@@ -246,11 +246,11 @@ have in quantity.
 were matched on *parameter count*, not channels, so they differ in both
 `max_degree` and `num_spherical_features`. "l=3 at c=8 bought nothing over
 l=2 at c=16 at equal parameters" is supported; "l=2 is enough" is not.
-`sr-small-l3c16-e100-wf0.05/` was set up to break this (l=3 at c=16, one
-variable vs `l2c16`) and cancelled after ~2 epochs in favour of the
-300-epoch run -- its config is intact, ~7h, and its checkpoint must **not**
-be evaluated. The cheaper way to close it is `l2c8`, the fourth corner of the
-2x2, at ~4.5h.
+An `sr-small-l3c16-e100-wf0.05/` run (l=3 at c=16, one variable vs `l2c16`)
+was set up to break this and cancelled after ~2 epochs in favour of the
+300-epoch run; the directory has since been deleted, but the config is
+recoverable from commit `333458c` and the run costs ~7h. The cheaper way to
+close it is `l2c8`, the fourth corner of the 2x2, at ~4.5h.
 
 A cost note: **CG ops did not predict wall clock at this size.** `l3c8` does
 2.8x the CG work of `l2c16` and finished *faster* (5h18m vs 5h42m). Fitting
@@ -347,9 +347,12 @@ split** from **31.17 to 27.97 meV/Å**.
   - size comparison at 100:1:0.05: `sr-e100-wf0.05/`,
     `sr-small-l2-e100-wf0.05/`, `sr-small-l3-e100-wf0.05/`,
     `sr-small-l2-e100-wf0.05-300ep/`
-  - set up but not run: `lr-e100-wf0.05/` (deferred),
-    `sr-small-l3c16-e100-wf0.05/` (cancelled after ~2 epochs -- **its
-    checkpoint is not a trained model**)
+  - set up but not run: `lr-e100-wf0.05/` (deferred; configs only, no `run/`)
+
+Directories for runs that were cancelled or superseded are deleted rather
+than left lying around -- a stale `run/` looks like a trained model to
+`evaluate.py`, and `lorem-train` will happily restore from a partial one.
+Configs stay recoverable from git history.
 - `evaluate.py` -- two figures per split: `parity_<split>.pdf` (energy /
   force / work function / `bec_z` parity with RMSE) and
   `rmse_vs_charge_<split>.pdf` (the same RMSEs binned by `total_charge`).
