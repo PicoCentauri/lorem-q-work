@@ -156,18 +156,20 @@ evidently almost free.
 
 Both use `lorem.LoremQ`.
 
-## Model-size comparison at the sweep's weights (set up, not yet run)
+## Model-size comparison at the sweep's weights
 
-Three runs sharing **identical** `settings.yaml` -- `100 : 1 : 0.05`, all
-training on energy, forces and the work function -- so the *only* thing that
-varies is the model. `sr-e100-wf0.05/` is the full-size member and therefore
-the exact control for the two smaller ones.
+Four runs sharing **identical** `settings.yaml` -- `100 : 1 : 0.05`, all
+training on energy, forces and the work function, differing only in
+`max_epochs` for the last -- so the *only* things that vary are the model and
+the schedule length. `sr-e100-wf0.05/` is the full-size member and therefore
+the exact control for the smaller ones.
 
 | variant | $d$ | $l_{\max}$ | $c$ | CG paths | CG ops | params |
 |---|---|---|---|---|---|---|
 | `sr-e100-wf0.05` | 128 | 6 | 4 | 175 | 393k | 1.16 M |
 | `sr-small-l2-e100-wf0.05` | 64 | 2 | **16** | 15 | 9.8k (0.03x) | 300k (0.26x) |
 | `sr-small-l3-e100-wf0.05` | 64 | 3 | 8 | 34 | 27k (0.07x) | 295k (0.25x) |
+| `sr-small-l2-e100-wf0.05-300ep` | 64 | 2 | **16** | 15 | 9.8k (0.03x) | 300k (0.26x) |
 
 ("CG ops" is $\sum_{l_1l_2l_3}(2l_1{+}1)(2l_2{+}1)(2l_3{+}1)\times c$ over
 valid paths -- the $m_1,m_2$ contraction that dominates the forward pass.)
@@ -191,17 +193,184 @@ On the weights: the shares (E 20.1%, F 67.8%, W 12.1%) come from label
 variances and so are model-independent -- but whether a model with 3% of the
 CG work can still represent `dE/dq` as well is exactly what these measure.
 
+### Results
+
+Converged **validation** RMSE, last validation block of each run (E meV/atom,
+F meV/Å, Φ V):
+
+| variant | epochs | E | F | Φ | wall |
+|---|---|---|---|---|---|
+| `sr-e100-wf0.05` | 200 | 0.769 | **31.17** | 0.1121 | 13h46m |
+| `sr-small-l2-e100-wf0.05` | 200 | 0.791 | 33.90 | 0.1034 | 5h42m |
+| `sr-small-l3-e100-wf0.05` | 200 | 0.867 | 34.19 | 0.1217 | 5h18m |
+| `sr-small-l2-e100-wf0.05-300ep` | 300 | **0.755** | 31.21 | **0.0958** | 8h32m |
+
+**A 4x smaller model matches the full one on energy and forces, given enough
+epochs.** At its own 300-epoch budget `l2c16` ties the control on forces
+(31.21 vs 31.17, inside noise) and on energy, in 62% of the wall clock. Its
+15% work-function win here does *not* hold up on the test sweep -- see
+"the test sweep reverses the headline" below before quoting it.
+
+**Read the two comparisons separately.** At *matched* 200 epochs the full
+model wins forces by 8% (31.17 vs 33.90), so the small model is not simply
+better -- the 300-epoch run also has 1.5x the gradient updates, the same
+confound as `../razor_centre/`. What is fair: the small model reaches parity
+for less total compute; whether the control would also improve at 300 epochs
+is untested (~20h).
+
+**200 epochs was learning-rate-limited, not capacity-limited.** `l2c16`'s
+force error per 20-epoch window over its second half was −4.6, −5.0, −2.3,
+−1.2, −0.26 %, tracking the cosine almost proportionally -- 120→140 halved
+the LR and still gave the best window of that half, while the final window
+bought nothing at lr 5e-8. Validation forces were still monotone at the end
+(best 33.90 at epoch 194, which is also the last value). Extending to 300
+epochs recovered −7.9% on forces, −4.5% on energy, −7.3% on Φ. **General
+warning for this repo: with `warmup_cosine`, a flattening validation curve is
+the schedule ending, not convergence.** The check that distinguishes them is
+whether the per-window improvement falls *faster* than the LR.
+
+Two caveats against reading further gains into more epochs. Over the same
+span `l2c16`'s train loss fell 41% but validation only 28%, and valid/train
+widened monotonically 1.24 → 1.52, so part of what remains is generalisation
+rather than optimisation. And these per-window numbers describe the 200-epoch
+schedule; the 300-epoch cosine is a different schedule, not a continuation.
+
+**$l_{\max}$ helps forces and hurts the work function.** Across the three
+converged 200-epoch models the control has the most angular resolution and
+the *worst* Φ (0.1121 vs `l2c16`'s 0.1034) while having the best forces. Φ is
+a global scalar response to charge, and plausibly benefits more from
+scalar/channel capacity than from angular degrees, which the $c=16$ models
+have in quantity.
+
+**The $l_{\max}$ question itself is still confounded.** `l2c16` and `l3c8`
+were matched on *parameter count*, not channels, so they differ in both
+`max_degree` and `num_spherical_features`. "l=3 at c=8 bought nothing over
+l=2 at c=16 at equal parameters" is supported; "l=2 is enough" is not.
+`sr-small-l3c16-e100-wf0.05/` was set up to break this (l=3 at c=16, one
+variable vs `l2c16`) and cancelled after ~2 epochs in favour of the
+300-epoch run -- its config is intact, ~7h, and its checkpoint must **not**
+be evaluated. The cheaper way to close it is `l2c8`, the fourth corner of the
+2x2, at ~4.5h.
+
+A cost note: **CG ops did not predict wall clock at this size.** `l3c8` does
+2.8x the CG work of `l2c16` and finished *faster* (5h18m vs 5h42m). Fitting
+fixed-plus-proportional to the three 200-epoch runs puts the fixed cost (data
+pipeline, optimiser, validation) near 5h, with CG only dominating up at the
+control's 393k ops. Scale small-model runtimes off that fit, not off CG ops.
+
+### `evaluate.py`: the test sweep reverses the headline
+
+Validation reproduces the training logs exactly, so the interesting part is
+`test_sweep`. Quoting the polarizable subset, the honest extrapolation check:
+
+| variant | E | F | Φ | `bec_z` |
+|---|---|---|---|---|
+| `sr-e100-wf0.05` | 1.40 | **33.64** | **0.3115** | 0.0399 |
+| `sr-small-l2-e100-wf0.05` | **1.26** | 37.77 | 0.3320 | 0.0368 |
+| `sr-small-l3-e100-wf0.05` | 1.56 | 38.70 | 0.3359 | 0.0414 |
+| `sr-small-l2-e100-wf0.05-300ep` | 1.39 | 34.64 | *0.3621* | **0.0364** |
+
+(n=34. No variant trains on `bec_z`; `evaluate.py` computes it via its own
+`jvp`.)
+
+**The 300-epoch run's work-function win does not survive.** It is the *best*
+Φ model on validation (0.0955) and the *worst* here (0.3621 against the
+control's 0.3115) -- the ordering inverts. That is the generalisation gap seen
+during training (valid/train 1.24 → 1.52) showing up as a real cost outside
+the ±0.25 e stencil. **The extra 100 epochs bought in-distribution Φ by
+overfitting the charge direction.**
+
+So the honest summary is narrower than the validation table alone suggests:
+
+- **Energy and forces: the small model genuinely reaches parity** (F 34.64 vs
+  33.64, E 1.39 vs 1.40), consistent with validation, at 62% of the wall clock.
+- **Work function: the full model is better where it matters** -- it wins on
+  the sweep despite losing on validation, and longer training makes the small
+  model worse.
+- `bec_z` separates almost nothing (0.0364-0.0414), as expected since nothing
+  supervises it.
+
+Two smaller observations. `l3c8` is much the best model on the
+*non-polarizable* frames (Φ 0.844 vs 1.11-1.49, E 7.00 vs 9.46-12.43), the
+regime no variant trains on and where the labels are least trustworthy; worth
+noting, not worth weighting. And from the weight-sweep round, `lr/` reached
+**Φ 0.209 and `bec_z` 0.0270** on these same 34 frames -- better than every
+model in this section. The Ewald head remains the strongest lever on the
+charge response, which is what makes the deferred `lr-e100-wf0.05/` the most
+valuable run still outstanding.
+
+### RMSE resolved by charge, and one frame that distorts everything
+
+`figures/rmse_vs_charge_{valid,test_sweep}.pdf` bin the same rows by
+`total_charge` (0.25 e bins) instead of pooling them -- a grid of variants x
+targets, keeping the polarizable split, with bins under 20 structures hatched.
+Parity plots say whether a model is biased; these say *where in charge space*
+the error lives, which is the question the ±0.25 e stencil raises. Use the
+`valid` figure: `test_sweep` has only 1-5 polarizable frames per charge, so
+nearly every bar there is hatched and it is not readable.
+
+First, error is **U-shaped in q** for all four models -- lowest around
+q ∈ [−0.75, 0], rising toward both extremes and more steeply on the positive
+side for Φ (0.13-0.17 V above q = +0.75 against ~0.09 mid-range). That tracks
+training density, and means the pooled RMSE understates the error at the
+charges a potentiostat sweep would actually visit.
+
+Second, and more actionable: **a single frame accounts for the whole
+force-error spike at q = −1.25, and for 10% of the reported validation force
+RMSE.** It is the worst frame for every variant -- `struc_pk=301216`,
+`q = −1.25`, `max_force = 12.66 eV/Å`:
+
+| | control | l2c16 200ep | l3c8 | l2c16 300ep |
+|---|---|---|---|---|
+| that frame's F RMSE | 481 | 445 | 371 | 474 |
+
+The next-worst frame in its bin is 41 meV/Å. Dropping it takes the bin from
+79.8 to 27.0 meV/Å, in line with its neighbours (23.9), and takes the **whole
+split** from **31.17 to 27.97 meV/Å**.
+
+- Every force number in this README is inflated ~10% by one frame. It hits
+  all four variants nearly equally, so the *comparisons* stand, but the
+  absolute values are pessimistic.
+- **This revises the max-force screening TODO above.** That section measured
+  a >20 eV/Å rule and correctly found it a no-op. At 12.66 eV/Å this frame is
+  under that threshold and still pathological -- the threshold was wrong, not
+  the idea. A cut near 10 eV/Å would catch it. It is in *validation*, so it
+  never corrupted training; it corrupts the metric.
+
 ## Layout
 
 - `prepare.py` -- builds `data/` from `../../datasets/razor/*.xyz`. Run
   locally and synced to the cluster, not re-run per job.
-- `sr/`, `lr/`, `sr-wf/`, `sr-wf0.05/`, `sr-e100-wf0.1/`, `sr-small-l2-e100-wf0.05/`,
-  `sr-small-l3-e100-wf0.05/` -- one experiment dir per variant: `model.yaml` +
-  `settings.yaml` + `srun.sh`.
-- `evaluate.py` -- energy / force / work-function parity plots with RMSE, on
-  `valid` and `test_sweep`, for both variants.
-- `srun.sh` (top level) -- separate SLURM job that just runs `evaluate.py`;
-  submit once both training jobs have finished.
+- One experiment dir per variant, each `model.yaml` + `settings.yaml` +
+  `srun.sh`:
+  - weight sweep: `sr/`, `lr/`, `sr-wf/`, `sr-wf0.05/`, `sr-e100-wf0.1/`
+  - size comparison at 100:1:0.05: `sr-e100-wf0.05/`,
+    `sr-small-l2-e100-wf0.05/`, `sr-small-l3-e100-wf0.05/`,
+    `sr-small-l2-e100-wf0.05-300ep/`
+  - set up but not run: `lr-e100-wf0.05/` (deferred),
+    `sr-small-l3c16-e100-wf0.05/` (cancelled after ~2 epochs -- **its
+    checkpoint is not a trained model**)
+- `evaluate.py` -- two figures per split: `parity_<split>.pdf` (energy /
+  force / work function / `bec_z` parity with RMSE) and
+  `rmse_vs_charge_<split>.pdf` (the same RMSEs binned by `total_charge`).
+  `VARIANTS` at the top selects which runs appear; it holds the four
+  size-comparison runs, since mixing in the weight-sweep runs would put four
+  different loss weights in one figure.
+- `srun.sh` (top level) -- SLURM job that runs `evaluate.py`. Uses
+  `~/venv/lorem-wf`: every variant it evaluates was trained as `lorem.LoremQ`
+  and `load_checkpoint` deserialises that class name out of the checkpoint's
+  own `model.yaml`, so `lorem313` fails on the first `from_dict`.
+
+Two traps in the evaluate workflow, both hit once:
+
+- `evaluate.py` caches to `evaluate_rows.json` and **loads that cache in
+  preference to re-evaluating**. Move it aside after retraining, or the
+  figures will silently be the previous round's. Re-plotting off an existing
+  cache needs no GPU and runs locally in seconds -- `scp` the cache down and
+  run `DATASETS=. python evaluate.py` rather than queueing a job.
+- `make pull` syncs the *whole* experiment tree remote→local and will
+  overwrite local edits to tracked files (it silently reverted this README
+  once). Commit before pulling, or `scp` the specific files you want.
 
 ## Settings
 
@@ -406,12 +575,17 @@ earn their place.
    long-range block, so the potentials enter as invariants via `Norm` and
    `S` is read-only there. At `max_degree_lr: 0` that path degenerates to a
    per-channel scalar rescaling of `S`, so raising `lmax_lr` is what switches
-   the equivariant long-range machinery on at all.
-   On the validation split `lr` also reaches 0.181 V on the work function
-   without ever training on it. Both the long-range counterpart of `sr-wf/`
-   and raising `lmax_lr` to the paper's default of 2 look more promising than
-   pushing the work-function weight, or than shrinking the model further.
-3. **`bec_z` on the full stencil** -- `../razor_centre/sr-wf-bec/` shows it
+   the equivariant long-range machinery on at all. On validation `lr` also
+   reaches 0.181 V on the work function without ever training on it. Both the
+   long-range counterpart of `sr-wf/` and raising `lmax_lr` to the paper's
+   default of 2 look more promising than pushing the work-function weight, or
+   than shrinking the model further.
+3. **A ~10 eV/Å max-force screen** -- see "one frame that distorts
+   everything" above. A single validation frame at 12.66 eV/Å costs 10% of
+   the reported force RMSE across every variant, and the >20 eV/Å rule
+   measured in the TODO section misses it entirely. Cheap to apply, and it
+   should be applied per `struc_pk` so the 3-charge stencil stays intact.
+4. **`bec_z` on the full stencil** -- `../razor_centre/sr-wf-bec/` shows it
    reaches 0.037 e on polarizable frames and helps `dE/dq` rather than
    competing with it. Worth repeating here, where the extra off-stencil data
    should make the derivative targets easier. Note this folder's

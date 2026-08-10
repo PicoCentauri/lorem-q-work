@@ -409,6 +409,149 @@ def _parity(ax, ref, pred, color, label, unit, polarizable=None, legend=False, s
     )
 
 
+# -- RMSE resolved by charge --
+
+# The dataset's charges sit on a 0.05 e grid, not 0.25, because the stencil is
+# q_MD +- 0.25 about a continuously-varying q_MD -- razor_val has 52 distinct
+# polarizable charges over [-1.75, 1.75], so a bar per exact value would be
+# ~23 frames each and very ragged. 0.25 is the coarsest binning that still
+# resolves the stencil spacing, and puts 11 of 15 bins above MIN_BIN_N.
+CHARGE_BIN_WIDTH = 0.25
+
+# Below this many structures a per-bin RMSE is too noisy to read. Bins under
+# it are still drawn -- hiding them would misrepresent the charge range that
+# was actually tested -- but hatched and annotated with their count.
+MIN_BIN_N = 20
+
+
+def _bin_centers(rows):
+    q = np.array([r["total_charge"] for r in rows])
+    lo = np.round(q.min() / CHARGE_BIN_WIDTH) * CHARGE_BIN_WIDTH
+    hi = np.round(q.max() / CHARGE_BIN_WIDTH) * CHARGE_BIN_WIDTH
+    n = int(round((hi - lo) / CHARGE_BIN_WIDTH))
+    return lo + CHARGE_BIN_WIDTH * np.arange(n + 1)
+
+
+def _bin_of(row, centers):
+    return int(np.argmin(np.abs(centers - row["total_charge"])))
+
+
+def _subset_rmse(rows, key):
+    """RMSE for one target over a row subset, or None if it has no labels."""
+    if key == "bec":
+        rows = [r for r in rows if "bec_ref" in r]
+    if not rows:
+        return None, 0
+    d = collect(rows)
+    if f"{key}_ref" not in d:
+        return None, 0
+    return rmse(d[f"{key}_pred"], d[f"{key}_ref"]), len(rows)
+
+
+@mpltex.acs_decorator
+def plot_rmse_vs_charge(all_rows, split, name):
+    """Grid of RMSE-vs-charge bar charts: one row per variant, one column per
+    target. Companion to the parity figure -- parity shows whether a model is
+    biased, this shows *where in charge space* the error lives, which is the
+    question the +-0.25 e stencil raises."""
+    plt.rcParams["text.usetex"] = False
+
+    split_rows = [r for r in all_rows if r["split"] == split]
+    if not split_rows:
+        return
+
+    # short symbols rather than the parity figure's full words: four columns
+    # of "Born effective charge RMSE (e)" would collide with the row labels
+    quantities = [
+        ("e", "$E$", "meV/atom"),
+        ("f", "$F$", "meV/Å"),
+        ("wf", r"$\Phi$", "V"),
+    ]
+    if any("bec_ref" in r for r in split_rows):
+        quantities.append(("bec", "$Z^*$", "e"))
+
+    centers = _bin_centers(split_rows)
+    # keep the polarizable split wherever the split carries both, as
+    # everywhere else in this script -- the two regimes have different error
+    # scales and pooling them hides that
+    flags = sorted({r["polarizable"] for r in split_rows}, reverse=True)
+    width = 0.8 * CHARGE_BIN_WIDTH / len(flags)
+
+    fig, axes = plt.subplots(
+        len(VARIANTS), len(quantities), squeeze=False, constrained_layout=True
+    )
+    fig.set_figwidth(2.6 * fig.get_figwidth())
+    fig.set_figheight(0.62 * len(VARIANTS) * fig.get_figwidth() / len(quantities))
+
+    for row, v in enumerate(VARIANTS):
+        rows_v = [r for r in split_rows if r["variant"] == v]
+        if not rows_v:
+            continue
+        binned = {}
+        for r in rows_v:
+            binned.setdefault(_bin_of(r, centers), []).append(r)
+
+        for col, (key, label, unit) in enumerate(quantities):
+            ax = axes[row][col]
+            for k, flag in enumerate(flags):
+                offset = (k - (len(flags) - 1) / 2) * width
+                xs, ys, thin = [], [], []
+                for b, rs in sorted(binned.items()):
+                    sub = [r for r in rs if r["polarizable"] == flag]
+                    val, n = _subset_rmse(sub, key)
+                    if val is None:
+                        continue
+                    xs.append(centers[b] + offset)
+                    ys.append(val)
+                    thin.append(n < MIN_BIN_N)
+                if not xs:
+                    continue
+                ax.bar(
+                    xs,
+                    ys,
+                    width=width,
+                    color=POLARIZABLE_COLORS[flag] if len(flags) > 1 else COLORS.get(v, "grey"),
+                    edgecolor="none",
+                    label=("polarizable" if flag else "non-polarizable")
+                    if len(flags) > 1
+                    else None,
+                    zorder=2,
+                )
+                # mark the under-populated bins rather than dropping them
+                for x, y, t in zip(xs, ys, thin):
+                    if t:
+                        ax.bar(
+                            x, y, width=width, color="none", edgecolor="0.25",
+                            lw=0.4, hatch="///", zorder=3,
+                        )
+            ax.set_xlabel("total charge $q$ (e)", fontsize=7)
+            ax.set_ylabel(f"{label} RMSE ({unit})", fontsize=7)
+            ax.set_xticks(centers[::2])
+            ax.tick_params(labelsize=6)
+            ax.margins(x=0.02)
+            if row == 0 and col == 0 and len(flags) > 1:
+                ax.legend(fontsize=5, loc="upper center", framealpha=0.9)
+
+        axes[row][0].annotate(
+            LABELS.get(v, v),
+            xy=(-0.38, 0.5),
+            xycoords="axes fraction",
+            rotation=90,
+            ha="center",
+            va="center",
+            fontsize=7,
+            fontweight="bold",
+            linespacing=1.4,
+        )
+
+    hatched = "hatched bars: n < %d structures in that bin" % MIN_BIN_N
+    fig.suptitle(f"razor -- {split} -- RMSE vs charge ({hatched})")
+    Path("figures").mkdir(exist_ok=True)
+    fig.savefig(Path("figures") / name, transparent=True, bbox_inches="tight")
+    plt.close(fig)
+    print(f"saved figures/{name}")
+
+
 @mpltex.acs_decorator
 def plot_split(all_rows, split, name):
     plt.rcParams["text.usetex"] = False  # no LaTeX install on this machine
@@ -492,6 +635,7 @@ def main():
     print_table(all_rows)
     for split, _, _ in SPLITS:
         plot_split(all_rows, split, f"parity_{split}.pdf")
+        plot_rmse_vs_charge(all_rows, split, f"rmse_vs_charge_{split}.pdf")
 
 
 if __name__ == "__main__":
