@@ -199,9 +199,15 @@ supervising `∂²E/∂r∂q` helped `∂E/∂q` rather than competing with it; 
 
 ### On the common evaluation set
 
-`evaluate.py` scores all six variants on `razor_val.xyz` (polarizable,
-n=1218) and on the wide-charge test sweep, so the two folders are directly
-comparable. Validation split, RMSE:
+`evaluate.py` scores all six variants on `razor_val.xyz` and on the wide-charge
+test sweep, so the two folders are directly comparable.
+
+**Frames with `max_force > 10 eV/Å` are screened out** of the evaluation
+splits: 5 of 1218 on `razor_val` (n=1213 kept), none on `razor_test`. RMSE is
+outlier-dominated, and those five cost 6-11% of the force RMSE across every
+variant. The table immediately below predates the screen and is kept for
+continuity with the surrounding text; the screened numbers are in "the clean
+cross-folder test" further down. Validation split, RMSE:
 
 | variant | trained on | energy | forces | work function |
 |---|---|---|---|---|
@@ -211,8 +217,8 @@ comparable. Validation split, RMSE:
 | `sr` | centre only | 1.04 | 31.9 | 0.434 |
 | `sr-wf` | centre only | 1.98 | 52.1 | 0.243 |
 | `sr-wf-bec` | centre only | 1.91 | 56.3 | 0.202 |
-| `sr-small-l2c8-...-675ep` | centre only | 0.87 | 35.3 | 0.202 |
-| `lr-small-l2c8-...-675ep` | centre only | 0.77 | 31.0 | **0.161** |
+| `sr-small-l2c8-...-675ep` | centre only | 0.85 | 33.0 | 0.202 |
+| `lr-small-l2c8-...-675ep` | centre only | 0.77 | 28.8 | **0.161** |
 
 (The last two rows are the update-matched `l2c8` pair added later; see "the
 clean cross-folder test" below, which is the comparison to trust. The rows
@@ -312,21 +318,23 @@ against 675 here (324). `model.yaml` is byte-identical across the four runs
 except the `lr` flag. Nothing is left varying except the training
 distribution and the range of the model.
 
-Common evaluation set (`razor_val.xyz`, polarizable, n=1218):
+Common evaluation set (`razor_val.xyz`, polarizable, screened at 10 eV/Å,
+n=1213):
 
 | model | trained on | E | F | Φ |
 |---|---|---|---|---|
-| `sr` l2c8 | full stencil | 0.777 | 35.3 | 0.114 |
-| `sr` l2c8 | centre only | 0.87 | 35.3 | 0.202 |
-| | | +12% | **±0%** | **+77%** |
-| `lr` l2c8 | full stencil | 0.758 | 29.8 | 0.085 |
-| `lr` l2c8 | centre only | 0.77 | 31.0 | 0.161 |
-| | | +2% | **+4%** | **+89%** |
+| `sr` l2c8 | full stencil | 0.775 | 32.9 | 0.114 |
+| `sr` l2c8 | centre only | 0.846 | 33.0 | 0.202 |
+| | | +9% | **+0.3%** | **+77%** |
+| `lr` l2c8 | full stencil | 0.746 | 28.1 | 0.084 |
+| `lr` l2c8 | centre only | 0.773 | 28.8 | 0.161 |
+| | | +4% | **+2.5%** | **+91%** |
 
 **With the budget properly matched, centre-only training costs essentially
-nothing on forces and roughly doubles the work-function error.** For the
-short-range pair the force RMSE is identical to three significant figures;
-for the long-range pair it is 4% apart. Energy is within 2-12%.
+nothing on forces and roughly doubles the work-function error.** The force
+gap is 0.3% for the short-range pair and 2.5% for the long-range one; energy
+is within 4-9%. (These are the 10 eV/Å-screened numbers -- the conclusion is
+unchanged from the unscreened ones, which gave 0% and 4%.)
 
 This sharpens the earlier "worse across the board" reading considerably.
 That statement came from unmatched budgets; `sr-450ep` then showed matching

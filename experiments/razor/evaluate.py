@@ -123,12 +123,32 @@ SAMPLE_SIZE = None
 ROWS_CACHE = Path("evaluate_rows.json")
 
 
+# Drop configurations whose DFT max force exceeds this, in eV/A. Not a
+# cosmetic choice: a single razor_val frame (struc_pk 301216, q = -1.25,
+# max_force 12.66) was the worst frame for every variant by an order of
+# magnitude -- 481 meV/A against 41 for the next worst in its charge bin --
+# and on its own inflated the pooled validation force RMSE from 27.97 to
+# 31.17 meV/A. The >20 eV/A rule the READMEs measured earlier is too loose to
+# catch it. Applied to the evaluation splits only; training data is untouched,
+# so this changes what is reported, not what was learned.
+MAX_FORCE_CUTOFF = 10.0
+
+
 def load_frames(name, polarizable_only, n=None):
     frames = read(f"{DATA}/{name}.xyz", index=":")
     for atoms in frames:
         atoms.info["total_charge"] = float(atoms.info.pop("bias_charge"))
     if polarizable_only:
         frames = [a for a in frames if a.info["polarizable"]]
+    over = [a.info["max_force"] for a in frames if a.info["max_force"] > MAX_FORCE_CUTOFF]
+    if over:
+        print(
+            f"  {name}: dropped {len(over)}/{len(frames)} frames over "
+            f"{MAX_FORCE_CUTOFF} eV/A (max_force "
+            f"{[round(x, 2) for x in sorted(over, reverse=True)]})",
+            flush=True,
+        )
+    frames = [a for a in frames if a.info["max_force"] <= MAX_FORCE_CUTOFF]
     if n:
         frames = frames[:n]
     return frames
@@ -381,11 +401,18 @@ def print_table(all_rows):
 # -- plots --
 
 
-def _parity(ax, ref, pred, color, label, unit, polarizable=None, legend=False, seed=0):
-    lo = min(ref.min(), pred.min())
-    hi = max(ref.max(), pred.max())
-    pad = 0.05 * (hi - lo) if hi > lo else 1.0
-    lims = (lo - pad, hi + pad)
+def _parity(
+    ax, ref, pred, color, label, unit, polarizable=None, legend=False, seed=0,
+    lims=None,
+):
+    # lims is passed in by plot_split so every row of a column shares one
+    # scale -- otherwise each panel autoscales and the rows cannot be compared
+    # by eye, which is the whole point of stacking them.
+    if lims is None:
+        lo = min(ref.min(), pred.min())
+        hi = max(ref.max(), pred.max())
+        pad = 0.05 * (hi - lo) if hi > lo else 1.0
+        lims = (lo - pad, hi + pad)
 
     if len(ref) > MAX_SCATTER_POINTS:
         idx = np.random.default_rng(seed).choice(
@@ -486,7 +513,7 @@ def plot_rmse_vs_charge(all_rows, split, name):
     question the +-0.25 e stencil raises."""
     plt.rcParams["text.usetex"] = False
 
-    split_rows = [r for r in all_rows if r["split"] == split]
+    split_rows = _split_rows(all_rows, split)
     if not split_rows:
         return
 
@@ -512,6 +539,7 @@ def plot_rmse_vs_charge(all_rows, split, name):
     )
     fig.set_figwidth(2.6 * fig.get_figwidth())
     fig.set_figheight(0.62 * len(VARIANTS) * fig.get_figwidth() / len(quantities))
+    col_max = {}
 
     for row, v in enumerate(VARIANTS):
         rows_v = [r for r in split_rows if r["variant"] == v]
@@ -559,6 +587,7 @@ def plot_rmse_vs_charge(all_rows, split, name):
             ax.set_xticks(centers[::2])
             ax.tick_params(labelsize=6)
             ax.margins(x=0.02)
+            col_max[col] = max(col_max.get(col, 0.0), ax.get_ylim()[1])
             if row == 0 and col == 0 and len(flags) > 1:
                 ax.legend(fontsize=5, loc="upper center", framealpha=0.9)
 
@@ -574,12 +603,33 @@ def plot_rmse_vs_charge(all_rows, split, name):
             linespacing=1.4,
         )
 
+    # one y-scale per column, as in the parity figure, so bar heights can be
+    # compared across rows rather than each panel rescaling to its own worst bin
+    for col in col_max:
+        for row in range(len(VARIANTS)):
+            axes[row][col].set_ylim(0, col_max[col])
+
     hatched = "hatched bars: n < %d structures in that bin" % MIN_BIN_N
     fig.suptitle(f"razor -- {split} -- RMSE vs charge ({hatched})")
     Path("figures").mkdir(exist_ok=True)
     fig.savefig(Path("figures") / name, transparent=True, bbox_inches="tight")
     plt.close(fig)
     print(f"saved figures/{name}")
+
+
+# The test sweep is only 13% polarizable, and the non-polarizable frames sit
+# outside the linear-response window where neither the model nor the reference
+# labels are trustworthy. They dominate every pooled number and stretch every
+# axis, so the figures show the polarizable subset only. The printed table
+# still reports all three subsets -- nothing is discarded, only not plotted.
+PLOT_POLARIZABLE_ONLY = {"test_sweep"}
+
+
+def _split_rows(all_rows, split):
+    rows = [r for r in all_rows if r["split"] == split]
+    if split in PLOT_POLARIZABLE_ONLY:
+        rows = [r for r in rows if r["polarizable"]]
+    return rows
 
 
 @mpltex.acs_decorator
@@ -591,7 +641,7 @@ def plot_split(all_rows, split, name):
         ("f", "force", "meV/Å"),
         ("wf", "work function", "V"),
     ]
-    if any("bec_ref" in r for r in all_rows if r["split"] == split):
+    if any("bec_ref" in r for r in _split_rows(all_rows, split)):
         quantities.append(("bec", "Born effective charge", "e"))
 
     fig, axes = plt.subplots(
@@ -600,11 +650,31 @@ def plot_split(all_rows, split, name):
     fig.set_figwidth(2.6 * fig.get_figwidth())
     fig.set_figheight(1.0 * len(VARIANTS) * fig.get_figwidth() / len(quantities))
 
-    for row, v in enumerate(VARIANTS):
-        rows = [r for r in all_rows if r["split"] == split and r["variant"] == v]
-        if not rows:
+    # one scale per column, over every variant, so rows are comparable by eye
+    per_variant = {}
+    for v in VARIANTS:
+        rows = [r for r in _split_rows(all_rows, split) if r["variant"] == v]
+        if rows:
+            per_variant[v] = collect(rows)
+    col_lims = {}
+    for key, _, _ in quantities:
+        vals = [
+            d[f"{key}_{which}"]
+            for d in per_variant.values()
+            for which in ("ref", "pred")
+            if f"{key}_{which}" in d
+        ]
+        if not vals:
             continue
-        d = collect(rows)
+        lo = min(float(np.min(a)) for a in vals)
+        hi = max(float(np.max(a)) for a in vals)
+        pad = 0.05 * (hi - lo) if hi > lo else 1.0
+        col_lims[key] = (lo - pad, hi + pad)
+
+    for row, v in enumerate(VARIANTS):
+        d = per_variant.get(v)
+        if d is None:
+            continue
         for col, (key, label, unit) in enumerate(quantities):
             ax = axes[row][col]
             _parity(
@@ -616,6 +686,7 @@ def plot_split(all_rows, split, name):
                 unit,
                 polarizable=d[f"{key}_polarizable"],
                 legend=(row == 0 and col == 0),
+                lims=col_lims.get(key),
             )
         # variant name once per row, outside the axes, so it can't collide
         # with the row above's x-label

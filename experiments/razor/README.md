@@ -198,6 +198,10 @@ CG work can still represent `dE/dq` as well is exactly what these measure.
 Converged **validation** RMSE, last validation block of each run (E meV/atom,
 F meV/Å, Φ V):
 
+These come from each run's own last validation block, i.e. **unscreened**
+(training-time validation does not apply `MAX_FORCE_CUTOFF`). For screened,
+directly comparable numbers use `evaluate.py`'s table further down.
+
 | variant | epochs | E | F | Φ | wall |
 |---|---|---|---|---|---|
 | `sr-e100-wf0.05` | 200 | 0.769 | 31.17 | 0.1121 | 13h46m |
@@ -303,6 +307,20 @@ model in this section. The Ewald head remains the strongest lever on the
 charge response, which is what makes the deferred `lr-e100-wf0.05/` the most
 valuable run still outstanding.
 
+### Evaluation frames are screened at 10 eV/Å
+
+`evaluate.py` drops frames with `max_force > 10 eV/Å` from the evaluation
+splits (`MAX_FORCE_CUTOFF`). On `razor_val` that is **5 of 1218** polarizable
+frames -- 12.66, 10.92, 10.87, 10.60, 10.53 eV/Å -- and on `razor_test`, none
+(its polarizable max is 5.14). Training data is untouched, so this changes
+what is reported, not what was learned, and it applies identically to every
+variant.
+
+It matters more than 5/1218 suggests, because RMSE is outlier-dominated:
+force RMSE falls 6-11% across the board, and **the ranking changes**. All
+force numbers below are post-screen; the pre-screen values are in git history
+(`06ac82c`) if a comparison is wanted.
+
 ### The Ewald head is the single biggest lever here
 
 `sr-small-l2c8-.../` and `lr-small-l2c8-.../` are the cleanest experiment in
@@ -312,9 +330,9 @@ this folder: same `d64 l2 c8` model, same loss weights, same 300 epochs,
 
 | | E | F | Φ | `bec_z` |
 |---|---|---|---|---|
-| **valid** (n=1218) | | | | |
-| `sr` l2c8 | 0.788 | 35.25 | 0.1139 | -- |
-| `lr` l2c8 | 0.758 | **29.81** | **0.0848** | -- |
+| **valid** (n=1213, screened) | | | | |
+| `sr` l2c8 | 0.775 | 32.9 | 0.114 | -- |
+| `lr` l2c8 | 0.746 | **28.1** | **0.0843** | -- |
 | change | −4% | **−15%** | **−26%** | |
 | **test sweep, polarizable** (n=34) | | | | |
 | `sr` l2c8 | 1.35 | 38.70 | 0.3320 | 0.0417 |
@@ -324,16 +342,24 @@ this folder: same `d64 l2 c8` model, same loss weights, same 300 epochs,
 **On the extrapolation set the Ewald head more than halves the work-function
 error**, 0.332 -> 0.151 V. Every short-range model in this folder, of any
 size and any training length, sits at 0.31-0.36 V there; `lr` is the only
-one that breaks out. It also gives the best forces and the best `bec_z` of
-anything measured here, at d64 l2 c8 -- **a quarter of the control's
+one that breaks out. On the same 34 frames it also gives the best forces and
+the best `bec_z` measured here -- at d64 l2 c8, **a quarter of the control's
 parameters and half its wall clock**.
 
-That is worth stating plainly: **the range of the model matters far more for
-the charge response than its size, its angular resolution, or how long it
-trains.** Going from the d128 l6 c4 control down to d64 l2 c8 costs ~13% on
-forces; adding the Ewald head to that small model wins ~17% back and halves
-Φ. The size axis, which this folder has spent five runs on, is the smaller
-of the two.
+**On validation, forces are a three-way tie.** After screening, the
+full-size control (27.9), `l2c16` at 300 epochs (28.1) and `lr` l2c8 (28.1)
+are indistinguishable. An earlier version of this section claimed `lr` l2c8
+had the best forces of anything measured; that was true only of the
+unscreened numbers, where the outlier frames happened to penalise the
+control most. The defensible claim is weaker but still the interesting one:
+**`lr` l2c8 matches the full-size model's forces on a quarter of the
+parameters, and beats everything on the work function.**
+
+So: **the range of the model matters far more for the charge response than
+its size, its angular resolution, or how long it trains.** Shrinking d128 l6
+c4 to d64 l2 c8 costs ~18% on forces (27.9 -> 32.9); adding the Ewald head
+wins all of it back and halves Φ on the sweep. The size axis, which this
+folder has spent five runs on, is the smaller of the two.
 
 It also confirms the earlier full-size result (`lr/` reached Φ 0.209 on these
 34 frames against `sr/`'s 0.275) and improves on it -- 0.151 V now, with a
@@ -356,6 +382,10 @@ Parity plots say whether a model is biased; these say *where in charge space*
 the error lives, which is the question the ±0.25 e stencil raises. Use the
 `valid` figure: `test_sweep` has only 1-5 polarizable frames per charge, so
 nearly every bar there is hatched and it is not readable.
+
+Note the outlier discussed below is now screened out of the evaluation
+splits, so the q = −1.25 spike no longer appears in the regenerated figures.
+The analysis is kept because it is what motivated the screen.
 
 First, error is **U-shaped in q** for all four models -- lowest around
 q ∈ [−0.75, 0], rising toward both extremes and more steeply on the positive
