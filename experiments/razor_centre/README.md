@@ -72,26 +72,36 @@ two folders. The split key is `struc_pk` and is never split within a
 structure, so there is no leakage. `prepare.py` raises if any centre frame
 fails to land in a split, rather than silently dropping it.
 
-## TODO: max-force screening (checked -- currently a no-op here)
+## Max-force screening (implemented at 10 eV/Å, evaluation only)
 
-Same check as `../razor/README.md`, on this folder's source file. No
-force-based exclusion is applied anywhere in the repo; `max_force` is present
-on every frame, so the "drop configs with max force > 20 eV/Å" rule is
-directly measurable:
+This folder's `evaluate.py` applies the same `MAX_FORCE_CUTOFF = 10 eV/Å` as
+`../razor/`, to the same evaluation splits -- both folders score on
+`razor_val.xyz` and `razor_test.xyz`, so the screen is identical and the
+cross-folder comparison stays like-for-like. **Training data is not
+screened.**
 
-| file | frames | `max_force` median / p95 / max | >20 eV/Å | of which polarizable |
+An earlier version of this section measured a **>20 eV/Å** rule against
+`razor_centre.xyz` and found one polarizable frame, concluding it was a
+no-op. That was right about the rule and wrong about the threshold; see
+`../razor/README.md` for the frame that motivated dropping to 10. Measured
+over this file's polarizable pool:
+
+| file | polarizable | median / p95 / max | >20 eV/Å | >10 eV/Å |
 |---|---|---|---|---|
-| `razor_centre.xyz` | 5,989 | 3.42 / 5.02 / **145.5** | 8 | **1** |
+| `razor_centre.xyz` | 5,398 | 3.43 / 4.98 / **35.78** | 1 | **8** |
 
-**One frame.** The `polarizable` filter already removes 7 of the 8, so the
-cutoff would drop 0.019% of the 5,398-frame polarizable pool and change
-nothing in the results above. That frame sits in one `struc_pk`; since this
-folder is one frame per structure, dropping it costs exactly one training
-structure.
+Since this folder is one frame per structure, those 8 frames are 8 distinct
+`struc_pk` and dropping them would cost exactly 8 training structures
+(0.15%). Nothing is currently dropped from training, so this is a TODO here
+as it is in `../razor/`, and the same argument applies: it is unlikely to
+matter at 0.15%, but train and evaluation should ideally be screened
+identically, and that has not been tested.
 
-Worth adding as a guard for future data rather than for this dataset -- a
-145 eV/Å configuration is broken, and it is incidental rather than by design
-that `polarizable` happens to catch it.
+What the screen does affect is every number reported below. It removes 5 of
+1218 polarizable `razor_val` frames and none of the 34 polarizable
+`razor_test` frames, and lowers force RMSE by 6-11% for every variant in both
+folders. Numbers labelled "screened" post-date it; the rest are marked where
+they do not.
 
 ## Born effective charges
 

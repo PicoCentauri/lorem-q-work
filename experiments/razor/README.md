@@ -82,35 +82,53 @@ the basis for the follow-up experiment below.
 Splits are by `struc_pk`, never within one -- the 3 charges of a geometry stay
 together. That split ships with the dataset; `prepare.py` does not re-split.
 
-### TODO: max-force screening (checked -- currently a no-op here)
+### Max-force screening (implemented at 10 eV/Å, evaluation only)
 
-No force-based exclusion is applied anywhere in this repo, and the dataset
-README does not mention one. `atoms.info["max_force"]` is present on every
-frame, so a "drop configs with max force > 20 eV/Å" rule is directly
-checkable. Measured:
+`evaluate.py` drops frames with `max_force > 10 eV/Å` from the evaluation
+splits (`MAX_FORCE_CUTOFF`). **Training data is not screened**, so this
+changes what is reported, not what was learned.
 
-| file | frames | `max_force` median / p95 / max | >20 eV/Å | of which polarizable |
+An earlier version of this section measured a **>20 eV/Å** rule and correctly
+concluded it was a no-op: the `polarizable` filter removes almost every
+offender, leaving 2 of 10,931 training frames and none in validation. The
+threshold was the problem, not the idea. Measured over the polarizable pools
+that the models actually see:
+
+| file | polarizable | median / p95 / max | >20 eV/Å | >10 eV/Å |
 |---|---|---|---|---|
-| `razor_train.xyz` | 16,170 | 3.44 / 5.02 / **92.3** | 21 | **2** |
-| `razor_val.xyz` | 1,797 | 3.45 / 5.13 / **145.5** | 3 | **0** |
-| `razor_test.xyz` | 260 | 3.72 / 4.84 / 5.14 | 0 | 0 |
+| `razor_train.xyz` | 10,931 | 3.43 / 4.93 / **35.78** | 2 | **14** |
+| `razor_val.xyz` | 1,218 | 3.44 / 5.05 / **12.66** | 0 | **5** |
+| `razor_test.xyz` | 34 | 3.75 / 4.74 / 4.81 | 0 | **0** |
 
-**The `polarizable` filter already removes almost all of them.** Of the 21
-high-force training frames only 2 survive into the 10,931-frame training
-pool -- 0.018% -- and none survive into the validation pool. So adding the
-cutoff would change these results not at all, and the two criteria are
-evidently correlated: frames near dielectric breakdown are also the ones with
-runaway forces.
+**Why 10 rather than 20.** The five validation frames between 10 and 12.66
+eV/Å are individually catastrophic: `struc_pk 301216` (12.66 eV/Å, q = −1.25)
+was the worst frame for every variant by an order of magnitude -- 481 meV/Å
+against 41 for the next worst in its charge bin -- and on its own moved the
+pooled force RMSE from 27.97 to 31.17. RMSE is outlier-dominated, so a
+handful of broken configurations set the headline number. A 20 eV/Å cut
+catches none of them.
 
-Two things to note if it is added anyway:
+**Effect.** Removing 5 of 1218 frames (0.4%) drops force RMSE by 6-11% across
+every variant, and changes the ranking -- see "the Ewald head" section, where
+a three-way tie on forces replaces what looked like a clear winner. The
+screen is uniform across variants, so comparisons remain fair either way;
+what changes is that they are no longer dominated by five frames.
 
-- The 2 surviving frames sit in a single `struc_pk`. Dropping frames
-  individually would break that geometry's 3-charge stencil, which the
-  splits are explicitly built to keep together, so the exclusion should be
-  applied per `struc_pk` (3 frames) rather than per frame.
-- The value is worth having as a guard for *future* data rather than for
-  this dataset -- a 145 eV/Å frame is a broken configuration, and relying on
-  `polarizable` to catch it is incidental rather than by design.
+**Per-frame vs per-`struc_pk` is moot here.** The concern was that dropping
+frames individually would break a geometry's 3-charge stencil, which the
+splits deliberately keep together. Measured: the 5 validation offenders span
+3 `struc_pk`, and those `struc_pk` contribute exactly 5 polarizable frames in
+total -- i.e. **every polarizable frame of an offending structure is itself an
+offender**, and the non-offending siblings were already removed by the
+`polarizable` filter. The two rules coincide, so `evaluate.py` screens
+per frame.
+
+**Open: training is still unscreened.** 14 of 10,931 polarizable training
+frames (0.13%) exceed 10 eV/Å, with a maximum of 35.78. They are a vanishing
+fraction of the loss and unlikely to matter, but they have not been tested,
+and it would be more consistent to screen train and evaluation identically.
+That needs a `prepare.py` change and a retrain to measure, so it is left as
+a real TODO rather than folded in silently.
 
 ## Loss-weight sweep
 
@@ -406,14 +424,15 @@ The next-worst frame in its bin is 41 meV/Å. Dropping it takes the bin from
 79.8 to 27.0 meV/Å, in line with its neighbours (23.9), and takes the **whole
 split** from **31.17 to 27.97 meV/Å**.
 
-- Every force number in this README is inflated ~10% by one frame. It hits
-  all four variants nearly equally, so the *comparisons* stand, but the
-  absolute values are pessimistic.
-- **This revises the max-force screening TODO above.** That section measured
-  a >20 eV/Å rule and correctly found it a no-op. At 12.66 eV/Å this frame is
-  under that threshold and still pathological -- the threshold was wrong, not
-  the idea. A cut near 10 eV/Å would catch it. It is in *validation*, so it
-  never corrupted training; it corrupts the metric.
+- It hit all variants nearly equally, so the *comparisons* were never wrong,
+  but the absolute force numbers were ~10% pessimistic.
+- **This is what motivated the 10 eV/Å screen** now implemented in
+  `evaluate.py` (see "Max-force screening" above). The earlier >20 eV/Å rule
+  was correctly measured and correctly called a no-op; it simply sits above
+  this frame. Since the screen landed, every force number in this README is
+  post-screen and the spike is absent from the regenerated figures.
+- The frame is in *validation*, so it never corrupted training -- only the
+  metric. Training remains unscreened; see the TODO in that section.
 
 ## Layout
 
@@ -661,11 +680,13 @@ earn their place.
    long-range counterpart of `sr-wf/` and raising `lmax_lr` to the paper's
    default of 2 look more promising than pushing the work-function weight, or
    than shrinking the model further.
-3. **A ~10 eV/Å max-force screen** -- see "one frame that distorts
-   everything" above. A single validation frame at 12.66 eV/Å costs 10% of
-   the reported force RMSE across every variant, and the >20 eV/Å rule
-   measured in the TODO section misses it entirely. Cheap to apply, and it
-   should be applied per `struc_pk` so the 3-charge stencil stays intact.
+3. ~~**A ~10 eV/Å max-force screen**~~ -- **done for evaluation**;
+   `MAX_FORCE_CUTOFF = 10` in both folders' `evaluate.py`. What remains is
+   applying it to *training*: 14 of 10,931 polarizable training frames
+   (0.13%) exceed it, untested. Needs a `prepare.py` change and a retrain.
+   Per-`struc_pk` application turned out to be unnecessary -- every
+   polarizable frame of an offending structure is itself an offender, so the
+   per-frame and per-structure rules coincide on this data.
 4. **`bec_z` on the full stencil** -- `../razor_centre/sr-wf-bec/` shows it
    reaches 0.037 e on polarizable frames and helps `dE/dq` rather than
    competing with it. Worth repeating here, where the extra off-stencil data
