@@ -55,29 +55,32 @@ from marathon.io import from_dict, read_msgpack, read_yaml
 EPSILON_0 = 0.005526349406
 
 DATA = "../../datasets/razor"
-# The model-size / training-length comparison, all at loss weights
-# 100:1:0.05 with byte-identical settings.yaml apart from max_epochs -- so
-# the only things varying across these four are the architecture and the
-# schedule length. The earlier weight-sweep runs (sr, lr, sr-wf, sr-wf0.05,
-# sr-e100-wf0.1) are deliberately left out: they answer a question that is
-# already settled, and mixing them in would put four different loss weights
-# in one figure. sr-small-l3c16-e100-wf0.05 is excluded too -- it was
-# cancelled after ~2 epochs and its checkpoint is meaningless.
+# The model-size / training-length / range comparison, all at loss weights
+# 100:1:0.05 with settings.yaml differing only in max_epochs -- so the only
+# things varying across these six are the architecture, the schedule length
+# and (for the last one) the Ewald head. The earlier weight-sweep runs (sr,
+# lr, sr-wf, sr-wf0.05, sr-e100-wf0.1) are deliberately left out: they answer
+# a question that is already settled, and mixing them in would put four
+# different loss weights in one figure.
 VARIANTS = [
     "sr-e100-wf0.05",
     "sr-small-l2-e100-wf0.05",
     "sr-small-l3-e100-wf0.05",
     "sr-small-l2-e100-wf0.05-300ep",
+    "sr-small-l2c8-e100-wf0.05-300ep",
+    "lr-small-l2c8-e100-wf0.05-300ep",
 ]
 
 # Row labels for the figure: the directory names encode the loss weights,
 # which are constant here, so they are all prefix and no signal. Name the
 # axis that actually varies instead.
 LABELS = {
-    "sr-e100-wf0.05": "d128 l6 c4\n200 ep",
-    "sr-small-l2-e100-wf0.05": "d64 l2 c16\n200 ep",
-    "sr-small-l3-e100-wf0.05": "d64 l3 c8\n200 ep",
-    "sr-small-l2-e100-wf0.05-300ep": "d64 l2 c16\n300 ep",
+    "sr-e100-wf0.05": "d128 l6 c4 sr\n200 ep",
+    "sr-small-l2-e100-wf0.05": "d64 l2 c16 sr\n200 ep",
+    "sr-small-l3-e100-wf0.05": "d64 l3 c8 sr\n200 ep",
+    "sr-small-l2-e100-wf0.05-300ep": "d64 l2 c16 sr\n300 ep",
+    "sr-small-l2c8-e100-wf0.05-300ep": "d64 l2 c8 sr\n300 ep",
+    "lr-small-l2c8-e100-wf0.05-300ep": "d64 l2 c8 LR\n300 ep",
 }
 # the summed-R2 checkpoint is named after the targets it covers -- "R2_E+F"
 # for energy+forces, "R2_E+F+W" once the work function is trained on,
@@ -99,6 +102,8 @@ COLORS = {
     "sr-small-l2-e100-wf0.05": "seagreen",
     "sr-small-l3-e100-wf0.05": "tomato",
     "sr-small-l2-e100-wf0.05-300ep": "rebeccapurple",
+    "sr-small-l2c8-e100-wf0.05-300ep": "goldenrod",
+    "lr-small-l2c8-e100-wf0.05-300ep": "crimson",
 }
 POLARIZABLE_COLORS = {True: "steelblue", False: "darkorange"}
 
@@ -129,6 +134,31 @@ def load_frames(name, polarizable_only, n=None):
     return frames
 
 
+# Attributes that used to live on Lorem and have since moved to the LoremQ
+# subclass. A checkpoint written before that move records the attribute
+# against the base class, and Lorem.__init__ now rejects the keyword -- even
+# when the value is false, which is the case for every plain-Lorem run here.
+# Strip those keys rather than editing the checkpoints: they are generated
+# artifacts that can only be reproduced by retraining, and this script is
+# meant to read checkpoints from either lorem version.
+LOREMQ_ONLY_KEYS = ("predict_bec",)
+
+
+def _drop_dead_keys(cfg):
+    for cls, kwargs in cfg.items():
+        if cls.rsplit(".", 1)[-1] == "LoremQ" or not isinstance(kwargs, dict):
+            continue
+        for key in LOREMQ_ONLY_KEYS:
+            if kwargs.pop(key, None):
+                # only false is safe to drop silently -- a true here would
+                # mean the checkpoint really wants behaviour the base class
+                # cannot provide, and quietly ignoring that would be wrong
+                raise RuntimeError(
+                    f"{cls} sets {key}=True but only LoremQ implements it"
+                )
+    return cfg
+
+
 def load_checkpoint(variant):
     candidates = sorted(
         p
@@ -141,7 +171,7 @@ def load_checkpoint(variant):
             f"found {[p.name for p in candidates]}"
         )
     folder = candidates[0] / "model"
-    model = from_dict(read_yaml(folder / "model.yaml"))
+    model = from_dict(_drop_dead_keys(read_yaml(folder / "model.yaml")))
     params = read_msgpack(folder / "model.msgpack")
     species_weights = read_yaml(folder / "baseline.yaml")["elemental"]
     return model, params, species_weights

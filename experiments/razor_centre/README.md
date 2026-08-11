@@ -21,6 +21,14 @@ less data.
 | `sr-wf/` | + `work_function` | supervises the autograd `dE/dq` |
 | `sr-wf-bec/` | + `bec_z` | additionally supervises the Born effective charge |
 | `sr-450ep/` | energy + forces | `sr/` with the budget matched to `../razor/sr/` in gradient updates, not epochs -- see the caveat under Results |
+| `sr-small-l2c8-e100-wf0.05-675ep/` | energy + forces + `work_function` | d64 l2 c8 at 100:1:0.05, 675 epochs = 218,700 updates, matching `../razor/sr-small-l2c8-...-300ep/` exactly |
+| `lr-small-l2c8-e100-wf0.05-675ep/` | same | the same run with `lr: true` (`max_degree_lr: 0`, monopole Ewald) |
+| `lr-e100-wf0.05-450ep/` | -- | set up, deferred, never run (configs only) |
+
+The last two trained variants are the ones to trust for cross-folder claims:
+they hold model, loss weights and update budget fixed against `../razor/`,
+so the training distribution is the only thing left varying. The four rows
+above them differ in several of those at once.
 
 `model.yaml` is identical across `sr/` and `sr-wf/`; `sr-wf-bec/` adds
 `predict_bec: True`. All three share one `data/`, so **only `loss_weights`
@@ -153,14 +161,22 @@ installed on the local machine.
 
 ## Results
 
-All three variants trained to the full 200 epochs. Converged **validation**
-RMSE (last validation block, epoch 200):
+Six variants have trained here. The first three ran 200 epochs; their
+converged **validation** RMSE (last validation block) on this folder's own
+538-frame centre validation set:
 
 | variant | energy | forces | work function | bec_z | runtime |
 |---|---|---|---|---|---|
 | `sr` | **0.746 meV/atom** | **25.2 meV/Å** | -- | -- | 6h09m |
 | `sr-wf` | 1.478 meV/atom | 47.2 meV/Å | 0.123 V | -- | 6h07m |
 | `sr-wf-bec` | 1.593 meV/atom | 52.5 meV/Å | **0.093 V** | **0.0253 e** | 13h23m |
+
+The `l2c8` pair added later, same set:
+
+| variant | energy | forces | work function | runtime |
+|---|---|---|---|---|
+| `sr-small-l2c8-e100-wf0.05-675ep` | 0.636 | 30.0 | 0.1158 | 7h03m |
+| `lr-small-l2c8-e100-wf0.05-675ep` | **0.589** | **26.8** | **0.0868** | 7h36m |
 
 R²: `sr` 99.95/99.88, `sr-wf` 99.82/99.57/98.09,
 `sr-wf-bec` 99.79/99.47/98.90/96.96.
@@ -195,6 +211,13 @@ comparable. Validation split, RMSE:
 | `sr` | centre only | 1.04 | 31.9 | 0.434 |
 | `sr-wf` | centre only | 1.98 | 52.1 | 0.243 |
 | `sr-wf-bec` | centre only | 1.91 | 56.3 | 0.202 |
+| `sr-small-l2c8-...-675ep` | centre only | 0.87 | 35.3 | 0.202 |
+| `lr-small-l2c8-...-675ep` | centre only | 0.77 | 31.0 | **0.161** |
+
+(The last two rows are the update-matched `l2c8` pair added later; see "the
+clean cross-folder test" below, which is the comparison to trust. The rows
+above them differ in model size, loss weights *and* update budget all at
+once.)
 
 **Centre-only training is worse across the board** at equal epochs -- by 27% on energy, 35% on
 forces and 84% on the work function.
@@ -278,6 +301,65 @@ better route to the work function than the explicit target at weight 0.15.
 
 **Adding `bec_z` slightly helps the work function** (0.202 vs 0.243 V) and
 energy (1.91 vs 1.98), at some cost in forces (56.3 vs 52.1).
+
+### The clean cross-folder test: forces converge, the work function does not
+
+`sr-450ep` matched the update budget but only for the old `0.5 : 0.5` weights
+and the full-size model. The `l2c8` pair does it properly: **the same model
+(d64 l2 c8), the same weights (100:1:0.05), and the same 218,700 gradient
+updates in both folders** -- 300 epochs on `../razor/` (729 batches/epoch)
+against 675 here (324). `model.yaml` is byte-identical across the four runs
+except the `lr` flag. Nothing is left varying except the training
+distribution and the range of the model.
+
+Common evaluation set (`razor_val.xyz`, polarizable, n=1218):
+
+| model | trained on | E | F | Φ |
+|---|---|---|---|---|
+| `sr` l2c8 | full stencil | 0.777 | 35.3 | 0.114 |
+| `sr` l2c8 | centre only | 0.87 | 35.3 | 0.202 |
+| | | +12% | **±0%** | **+77%** |
+| `lr` l2c8 | full stencil | 0.758 | 29.8 | 0.085 |
+| `lr` l2c8 | centre only | 0.77 | 31.0 | 0.161 |
+| | | +2% | **+4%** | **+89%** |
+
+**With the budget properly matched, centre-only training costs essentially
+nothing on forces and roughly doubles the work-function error.** For the
+short-range pair the force RMSE is identical to three significant figures;
+for the long-range pair it is 4% apart. Energy is within 2-12%.
+
+This sharpens the earlier "worse across the board" reading considerably.
+That statement came from unmatched budgets; `sr-450ep` then showed matching
+updates closes half to two thirds of each gap. This pair closes the force gap
+**entirely** and leaves the work-function gap almost untouched.
+
+The result is exactly what the data argument predicts and is worth stating in
+those terms: **a geometry that appears at one charge constrains `∂E/∂r` just
+as well as one that appears at three, and cannot constrain `∂E/∂q` at all.**
+Forces are available from every frame regardless; the charge derivative needs
+the stencil. So the off-stencil frames are not general-purpose extra data --
+they buy one specific quantity, and they buy it at roughly 2x.
+
+Test sweep, polarizable frames (n=34), same four runs:
+
+| model | trained on | E | F | Φ | `bec_z` |
+|---|---|---|---|---|---|
+| `sr` l2c8 | full stencil | 1.35 | 38.7 | 0.332 | 0.0417 |
+| `sr` l2c8 | centre only | 1.02 | 37.0 | 0.319 | 0.0499 |
+| `lr` l2c8 | full stencil | 1.41 | 32.2 | **0.151** | **0.0342** |
+| `lr` l2c8 | centre only | 1.13 | 32.1 | 0.177 | 0.0435 |
+
+Outside the ±0.25 e stencil the Φ gap narrows sharply (0.332 vs 0.319 for
+`sr`; 0.151 vs 0.177 for `lr`) and centre-only is actually *better* on
+energy. That is not a contradiction: the sweep's charges lie outside both
+training distributions, so neither model is interpolating, and the advantage
+the stencil frames confer inside their window does not extend beyond it.
+
+**The Ewald head dominates both effects.** `lr` beats `sr` by more, in both
+folders, than full-stencil beats centre-only: on the sweep it halves Φ
+(0.151 vs 0.332 on `../razor/`, 0.177 vs 0.319 here) where the data axis
+moves it by a few percent. See `../razor/README.md` for that comparison in
+full. Note it is still `max_degree_lr: 0`, monopole-only.
 
 ### Born effective charges, trained on or not
 

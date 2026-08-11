@@ -200,10 +200,12 @@ F meV/Å, Φ V):
 
 | variant | epochs | E | F | Φ | wall |
 |---|---|---|---|---|---|
-| `sr-e100-wf0.05` | 200 | 0.769 | **31.17** | 0.1121 | 13h46m |
+| `sr-e100-wf0.05` | 200 | 0.769 | 31.17 | 0.1121 | 13h46m |
 | `sr-small-l2-e100-wf0.05` | 200 | 0.791 | 33.90 | 0.1034 | 5h42m |
 | `sr-small-l3-e100-wf0.05` | 200 | 0.867 | 34.19 | 0.1217 | 5h18m |
-| `sr-small-l2-e100-wf0.05-300ep` | 300 | **0.755** | 31.21 | **0.0958** | 8h32m |
+| `sr-small-l2-e100-wf0.05-300ep` | 300 | **0.755** | 31.21 | 0.0958 | 8h32m |
+| `sr-small-l2c8-e100-wf0.05-300ep` | 300 | 0.788 | 35.25 | 0.1139 | 6h43m |
+| `lr-small-l2c8-e100-wf0.05-300ep` | 300 | 0.758 | **29.81** | **0.0848** | 7h10m |
 
 **A 4x smaller model matches the full one on energy and forces, given enough
 epochs.** At its own 300-epoch budget `l2c16` ties the control on forces
@@ -265,10 +267,12 @@ Validation reproduces the training logs exactly, so the interesting part is
 
 | variant | E | F | Φ | `bec_z` |
 |---|---|---|---|---|
-| `sr-e100-wf0.05` | 1.40 | **33.64** | **0.3115** | 0.0399 |
+| `sr-e100-wf0.05` | 1.40 | 33.64 | 0.3115 | 0.0399 |
 | `sr-small-l2-e100-wf0.05` | **1.26** | 37.77 | 0.3320 | 0.0368 |
 | `sr-small-l3-e100-wf0.05` | 1.56 | 38.70 | 0.3359 | 0.0414 |
-| `sr-small-l2-e100-wf0.05-300ep` | 1.39 | 34.64 | *0.3621* | **0.0364** |
+| `sr-small-l2-e100-wf0.05-300ep` | 1.39 | 34.64 | *0.3621* | 0.0364 |
+| `sr-small-l2c8-e100-wf0.05-300ep` | 1.35 | 38.70 | 0.3320 | 0.0417 |
+| `lr-small-l2c8-e100-wf0.05-300ep` | 1.41 | **32.20** | **0.1510** | **0.0342** |
 
 (n=34. No variant trains on `bec_z`; `evaluate.py` computes it via its own
 `jvp`.)
@@ -298,6 +302,50 @@ noting, not worth weighting. And from the weight-sweep round, `lr/` reached
 model in this section. The Ewald head remains the strongest lever on the
 charge response, which is what makes the deferred `lr-e100-wf0.05/` the most
 valuable run still outstanding.
+
+### The Ewald head is the single biggest lever here
+
+`sr-small-l2c8-.../` and `lr-small-l2c8-.../` are the cleanest experiment in
+this folder: same `d64 l2 c8` model, same loss weights, same 300 epochs,
+`model.yaml` differing on exactly one line (`lr: false` -> `true`), and
+`settings.yaml` byte-identical. Everything below is that one flag.
+
+| | E | F | Φ | `bec_z` |
+|---|---|---|---|---|
+| **valid** (n=1218) | | | | |
+| `sr` l2c8 | 0.788 | 35.25 | 0.1139 | -- |
+| `lr` l2c8 | 0.758 | **29.81** | **0.0848** | -- |
+| change | −4% | **−15%** | **−26%** | |
+| **test sweep, polarizable** (n=34) | | | | |
+| `sr` l2c8 | 1.35 | 38.70 | 0.3320 | 0.0417 |
+| `lr` l2c8 | 1.41 | **32.20** | **0.1510** | **0.0342** |
+| change | +4% | **−17%** | **−55%** | −18% |
+
+**On the extrapolation set the Ewald head more than halves the work-function
+error**, 0.332 -> 0.151 V. Every short-range model in this folder, of any
+size and any training length, sits at 0.31-0.36 V there; `lr` is the only
+one that breaks out. It also gives the best forces and the best `bec_z` of
+anything measured here, at d64 l2 c8 -- **a quarter of the control's
+parameters and half its wall clock**.
+
+That is worth stating plainly: **the range of the model matters far more for
+the charge response than its size, its angular resolution, or how long it
+trains.** Going from the d128 l6 c4 control down to d64 l2 c8 costs ~13% on
+forces; adding the Ewald head to that small model wins ~17% back and halves
+Φ. The size axis, which this folder has spent five runs on, is the smaller
+of the two.
+
+It also confirms the earlier full-size result (`lr/` reached Φ 0.209 on these
+34 frames against `sr/`'s 0.275) and improves on it -- 0.151 V now, with a
+much smaller model, at a work-function weight of 0.05 rather than 0.
+
+Worth keeping in view: this is all at `max_degree_lr: 0`, monopole-only. The
+long-range block feeds its potentials into the scalar features `P` alone --
+`nodes_spherical` is never reassigned there, and at `max_degree_lr: 0` the
+equivariant branch degenerates to a per-channel scalar rescaling of `S`. So
+these gains come from a *monopole* Ewald term, and Lorem's equivariant
+long-range machinery has still not been switched on in this project. Raising
+`lmax_lr` to the paper's default of 2 is now clearly the next thing to try.
 
 ### RMSE resolved by charge, and one frame that distorts everything
 

@@ -55,7 +55,27 @@ from marathon.io import from_dict, read_msgpack, read_yaml
 EPSILON_0 = 0.005526349406
 
 DATA = "../../datasets/razor"
-VARIANTS = ["sr", "sr-450ep", "sr-wf", "sr-wf-bec"]
+VARIANTS = [
+    "sr",
+    "sr-450ep",
+    "sr-wf",
+    "sr-wf-bec",
+    "sr-small-l2c8-e100-wf0.05-675ep",
+    "lr-small-l2c8-e100-wf0.05-675ep",
+]
+
+# Row labels. The first four are already short; the l2c8 pair carries the
+# loss weights in its directory name, which say nothing here since they are
+# fixed, so label the axes that vary. 675 epochs is the gradient-update match
+# to ../razor/'s 300 (729 vs 324 batches/epoch -> 218,700 updates either way).
+LABELS = {
+    "sr": "d128 l6 c4 sr\n200 ep",
+    "sr-450ep": "d128 l6 c4 sr\n450 ep",
+    "sr-wf": "d128 l6 c4 sr\n+wf, 200 ep",
+    "sr-wf-bec": "d128 l6 c4 sr\n+wf+bec, 200 ep",
+    "sr-small-l2c8-e100-wf0.05-675ep": "d64 l2 c8 sr\n675 ep",
+    "lr-small-l2c8-e100-wf0.05-675ep": "d64 l2 c8 LR\n675 ep",
+}
 # the summed-R2 checkpoint is named after the targets it covers -- "R2_E+F"
 # for energy+forces, "R2_E+F+W" once the work function is trained on,
 # "R2_E+F+W+B" with the Born effective charges on top. Resolve it per variant
@@ -76,6 +96,8 @@ COLORS = {
     "sr-450ep": "darkorange",
     "sr-wf": "seagreen",
     "sr-wf-bec": "rebeccapurple",
+    "sr-small-l2c8-e100-wf0.05-675ep": "goldenrod",
+    "lr-small-l2c8-e100-wf0.05-675ep": "crimson",
 }
 POLARIZABLE_COLORS = {True: "steelblue", False: "darkorange"}
 
@@ -106,6 +128,31 @@ def load_frames(name, polarizable_only, n=None):
     return frames
 
 
+# Attributes that used to live on Lorem and have since moved to the LoremQ
+# subclass. A checkpoint written before that move records the attribute
+# against the base class, and Lorem.__init__ now rejects the keyword -- even
+# when the value is false, which is the case for every plain-Lorem run here.
+# Strip those keys rather than editing the checkpoints: they are generated
+# artifacts that can only be reproduced by retraining, and this script is
+# meant to read checkpoints from either lorem version.
+LOREMQ_ONLY_KEYS = ("predict_bec",)
+
+
+def _drop_dead_keys(cfg):
+    for cls, kwargs in cfg.items():
+        if cls.rsplit(".", 1)[-1] == "LoremQ" or not isinstance(kwargs, dict):
+            continue
+        for key in LOREMQ_ONLY_KEYS:
+            if kwargs.pop(key, None):
+                # only false is safe to drop silently -- a true here would
+                # mean the checkpoint really wants behaviour the base class
+                # cannot provide, and quietly ignoring that would be wrong
+                raise RuntimeError(
+                    f"{cls} sets {key}=True but only LoremQ implements it"
+                )
+    return cfg
+
+
 def load_checkpoint(variant):
     candidates = sorted(
         p
@@ -118,7 +165,7 @@ def load_checkpoint(variant):
             f"found {[p.name for p in candidates]}"
         )
     folder = candidates[0] / "model"
-    model = from_dict(read_yaml(folder / "model.yaml"))
+    model = from_dict(_drop_dead_keys(read_yaml(folder / "model.yaml")))
     params = read_msgpack(folder / "model.msgpack")
     species_weights = read_yaml(folder / "baseline.yaml")["elemental"]
     return model, params, species_weights
@@ -386,6 +433,149 @@ def _parity(ax, ref, pred, color, label, unit, polarizable=None, legend=False, s
     )
 
 
+# -- RMSE resolved by charge --
+
+# The dataset's charges sit on a 0.05 e grid, not 0.25, because the stencil is
+# q_MD +- 0.25 about a continuously-varying q_MD -- razor_val has 52 distinct
+# polarizable charges over [-1.75, 1.75], so a bar per exact value would be
+# ~23 frames each and very ragged. 0.25 is the coarsest binning that still
+# resolves the stencil spacing, and puts 11 of 15 bins above MIN_BIN_N.
+CHARGE_BIN_WIDTH = 0.25
+
+# Below this many structures a per-bin RMSE is too noisy to read. Bins under
+# it are still drawn -- hiding them would misrepresent the charge range that
+# was actually tested -- but hatched and annotated with their count.
+MIN_BIN_N = 20
+
+
+def _bin_centers(rows):
+    q = np.array([r["total_charge"] for r in rows])
+    lo = np.round(q.min() / CHARGE_BIN_WIDTH) * CHARGE_BIN_WIDTH
+    hi = np.round(q.max() / CHARGE_BIN_WIDTH) * CHARGE_BIN_WIDTH
+    n = int(round((hi - lo) / CHARGE_BIN_WIDTH))
+    return lo + CHARGE_BIN_WIDTH * np.arange(n + 1)
+
+
+def _bin_of(row, centers):
+    return int(np.argmin(np.abs(centers - row["total_charge"])))
+
+
+def _subset_rmse(rows, key):
+    """RMSE for one target over a row subset, or None if it has no labels."""
+    if key == "bec":
+        rows = [r for r in rows if "bec_ref" in r]
+    if not rows:
+        return None, 0
+    d = collect(rows)
+    if f"{key}_ref" not in d:
+        return None, 0
+    return rmse(d[f"{key}_pred"], d[f"{key}_ref"]), len(rows)
+
+
+@mpltex.acs_decorator
+def plot_rmse_vs_charge(all_rows, split, name):
+    """Grid of RMSE-vs-charge bar charts: one row per variant, one column per
+    target. Companion to the parity figure -- parity shows whether a model is
+    biased, this shows *where in charge space* the error lives, which is the
+    question the +-0.25 e stencil raises."""
+    plt.rcParams["text.usetex"] = False
+
+    split_rows = [r for r in all_rows if r["split"] == split]
+    if not split_rows:
+        return
+
+    # short symbols rather than the parity figure's full words: four columns
+    # of "Born effective charge RMSE (e)" would collide with the row labels
+    quantities = [
+        ("e", "$E$", "meV/atom"),
+        ("f", "$F$", "meV/Å"),
+        ("wf", r"$\Phi$", "V"),
+    ]
+    if any("bec_ref" in r for r in split_rows):
+        quantities.append(("bec", "$Z^*$", "e"))
+
+    centers = _bin_centers(split_rows)
+    # keep the polarizable split wherever the split carries both, as
+    # everywhere else in this script -- the two regimes have different error
+    # scales and pooling them hides that
+    flags = sorted({r["polarizable"] for r in split_rows}, reverse=True)
+    width = 0.8 * CHARGE_BIN_WIDTH / len(flags)
+
+    fig, axes = plt.subplots(
+        len(VARIANTS), len(quantities), squeeze=False, constrained_layout=True
+    )
+    fig.set_figwidth(2.6 * fig.get_figwidth())
+    fig.set_figheight(0.62 * len(VARIANTS) * fig.get_figwidth() / len(quantities))
+
+    for row, v in enumerate(VARIANTS):
+        rows_v = [r for r in split_rows if r["variant"] == v]
+        if not rows_v:
+            continue
+        binned = {}
+        for r in rows_v:
+            binned.setdefault(_bin_of(r, centers), []).append(r)
+
+        for col, (key, label, unit) in enumerate(quantities):
+            ax = axes[row][col]
+            for k, flag in enumerate(flags):
+                offset = (k - (len(flags) - 1) / 2) * width
+                xs, ys, thin = [], [], []
+                for b, rs in sorted(binned.items()):
+                    sub = [r for r in rs if r["polarizable"] == flag]
+                    val, n = _subset_rmse(sub, key)
+                    if val is None:
+                        continue
+                    xs.append(centers[b] + offset)
+                    ys.append(val)
+                    thin.append(n < MIN_BIN_N)
+                if not xs:
+                    continue
+                ax.bar(
+                    xs,
+                    ys,
+                    width=width,
+                    color=POLARIZABLE_COLORS[flag] if len(flags) > 1 else COLORS.get(v, "grey"),
+                    edgecolor="none",
+                    label=("polarizable" if flag else "non-polarizable")
+                    if len(flags) > 1
+                    else None,
+                    zorder=2,
+                )
+                # mark the under-populated bins rather than dropping them
+                for x, y, t in zip(xs, ys, thin):
+                    if t:
+                        ax.bar(
+                            x, y, width=width, color="none", edgecolor="0.25",
+                            lw=0.4, hatch="///", zorder=3,
+                        )
+            ax.set_xlabel("total charge $q$ (e)", fontsize=7)
+            ax.set_ylabel(f"{label} RMSE ({unit})", fontsize=7)
+            ax.set_xticks(centers[::2])
+            ax.tick_params(labelsize=6)
+            ax.margins(x=0.02)
+            if row == 0 and col == 0 and len(flags) > 1:
+                ax.legend(fontsize=5, loc="upper center", framealpha=0.9)
+
+        axes[row][0].annotate(
+            LABELS.get(v, v),
+            xy=(-0.38, 0.5),
+            xycoords="axes fraction",
+            rotation=90,
+            ha="center",
+            va="center",
+            fontsize=7,
+            fontweight="bold",
+            linespacing=1.4,
+        )
+
+    hatched = "hatched bars: n < %d structures in that bin" % MIN_BIN_N
+    fig.suptitle(f"razor -- {split} -- RMSE vs charge ({hatched})")
+    Path("figures").mkdir(exist_ok=True)
+    fig.savefig(Path("figures") / name, transparent=True, bbox_inches="tight")
+    plt.close(fig)
+    print(f"saved figures/{name}")
+
+
 @mpltex.acs_decorator
 def plot_split(all_rows, split, name):
     plt.rcParams["text.usetex"] = False  # no LaTeX install on this machine
@@ -428,7 +618,7 @@ def plot_split(all_rows, split, name):
         # variant name once per row, outside the axes, so it can't collide
         # with the row above's x-label
         axes[row][0].annotate(
-            v,
+            LABELS.get(v, v),
             xy=(-0.42, 0.5),
             xycoords="axes fraction",
             rotation=90,
@@ -472,6 +662,7 @@ def main():
     print_table(all_rows)
     for split, _, _ in SPLITS:
         plot_split(all_rows, split, f"parity_{split}.pdf")
+        plot_rmse_vs_charge(all_rows, split, f"rmse_vs_charge_{split}.pdf")
 
 
 if __name__ == "__main__":
