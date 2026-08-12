@@ -8,7 +8,7 @@
 #SBATCH --cpus-per-task 16
 #SBATCH --partition=a100
 #SBATCH --constraint=a100_80
-#SBATCH --time 01:00:00
+#SBATCH --time 02:00:00
 
 # see sr/srun.sh -- `module` is a shell function an sbatch script does not
 # inherit unless it was submitted from an interactive shell.

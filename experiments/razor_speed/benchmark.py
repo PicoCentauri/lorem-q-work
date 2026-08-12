@@ -67,9 +67,20 @@ REPEATS = [(1, 1), (2, 2), (3, 3)]
 
 STRUCTURE = "../../datasets/razor/razor_test.xyz"
 
+# Verlet skin values to sweep, in Angstrom. 0.25 is lorem's default. A larger
+# skin trades compute for rebuild frequency: the neighbour list is built at
+# cutoff + skin, so more pairs are carried every step (and the padded arrays
+# grow), but the rebuild -- which re-runs to_sample and re-uploads the whole
+# batch -- fires less often. The first run at the default rebuilt on ~28% of
+# steps at ~6.5 ms each, which was the entire md-minus-calculator gap, so the
+# optimum is probably not 0.25.
+SKINS = [0.25, 0.5, 1.0, 2.0]
+
 N_WARMUP = 5
 N_TIMED = 50
-N_MD = 50
+# 100 rather than 50: rebuild counts are the point of the skin sweep and 50
+# steps gave only ~14 events, too few to compare rates across skins.
+N_MD = 100
 TIMESTEP_FS = 0.5
 TEMPERATURE_K = 300.0
 
@@ -204,54 +215,61 @@ def main():
         for repeat in REPEATS:
             atoms = make_atoms(repeat)
             n = len(atoms)
-            print(f"\n=== {name}  {repeat[0]}x{repeat[1]}  n={n} ===", flush=True)
+            for skin in SKINS:
+                print(f"\n=== {name}  {repeat[0]}x{repeat[1]}  n={n}  skin={skin} ===",
+                      flush=True)
 
-            calc = instrument(Calculator.from_checkpoint(folder))
-            calc.calculate(atoms)  # triggers setup + the first XLA compile
+                calc = instrument(Calculator.from_checkpoint(folder, skin=skin))
+                calc.calculate(atoms)  # triggers setup + the first XLA compile
 
-            dev_async = time_device(calc, block_every_step=False)
-            dev_sync = time_device(calc, block_every_step=True)
-            calc_dt, calc_rebuilds = time_calculator(calc, atoms)
-            md_dt, md_rebuilds = time_md(calc, atoms)
+                dev_async = time_device(calc, block_every_step=False)
+                dev_sync = time_device(calc, block_every_step=True)
+                calc_dt, calc_rebuilds = time_calculator(calc, atoms)
+                md_dt, md_rebuilds = time_md(calc, atoms)
 
-            row = {
-                "model": name,
-                "repeat": list(repeat),
-                "n_atoms": n,
-                "device_async_ms": dev_async * 1e3,
-                "device_sync_ms": dev_sync * 1e3,
-                "calculator_ms": calc_dt * 1e3,
-                "md_ms": md_dt * 1e3,
-                "calc_rebuilds": calc_rebuilds,
-                "md_rebuilds": md_rebuilds,
-                "md_steps": N_MD,
-                "ns_per_day": ns_per_day(md_dt * 1e3, TIMESTEP_FS),
-                "overhead_ratio": md_dt / dev_async,
-            }
-            rows.append(row)
-            print(
-                f"  device async {row['device_async_ms']:7.2f} ms/step\n"
-                f"  device sync  {row['device_sync_ms']:7.2f} ms/step\n"
-                f"  calculator   {row['calculator_ms']:7.2f} ms/step  "
-                f"({calc_rebuilds} rebuilds)\n"
-                f"  ase MD       {row['md_ms']:7.2f} ms/step  "
-                f"({md_rebuilds} rebuilds in {N_MD} steps)\n"
-                f"  -> {row['ns_per_day']:.3f} ns/day, "
-                f"{row['overhead_ratio']:.2f}x the device floor",
-                flush=True,
-            )
+                row = {
+                    "model": name,
+                    "skin": skin,
+                    "repeat": list(repeat),
+                    "n_atoms": n,
+                    "device_async_ms": dev_async * 1e3,
+                    "device_sync_ms": dev_sync * 1e3,
+                    "calculator_ms": calc_dt * 1e3,
+                    "md_ms": md_dt * 1e3,
+                    "calc_rebuilds": calc_rebuilds,
+                    "md_rebuilds": md_rebuilds,
+                    "md_steps": N_MD,
+                    "ns_per_day": ns_per_day(md_dt * 1e3, TIMESTEP_FS),
+                    "overhead_ratio": md_dt / dev_async,
+                }
+                rows.append(row)
+                print(
+                    f"  device async {row['device_async_ms']:7.2f} ms/step\n"
+                    f"  device sync  {row['device_sync_ms']:7.2f} ms/step\n"
+                    f"  calculator   {row['calculator_ms']:7.2f} ms/step  "
+                    f"({calc_rebuilds} rebuilds)\n"
+                    f"  ase MD       {row['md_ms']:7.2f} ms/step  "
+                    f"({md_rebuilds}/{N_MD} steps rebuilt)\n"
+                    f"  -> {row['ns_per_day']:.3f} ns/day, "
+                    f"{row['overhead_ratio']:.2f}x the device floor",
+                    flush=True,
+                )
+                del calc
+                jax.clear_caches()
 
     with open(OUT, "w") as f:
         json.dump(rows, f, indent=2)
     print(f"\nwrote {OUT}")
 
-    print(f"\n{'model':<10}{'n':>6}{'async':>9}{'sync':>9}{'calc':>9}{'MD':>9}"
-          f"{'ns/day':>9}{'MD/async':>10}")
+    print(f"\n{'model':<10}{'n':>6}{'skin':>6}{'async':>9}{'sync':>9}{'calc':>9}"
+          f"{'MD':>9}{'rebuild%':>10}{'ns/day':>9}{'MD/async':>10}")
     for r in rows:
         print(
-            f"{r['model']:<10}{r['n_atoms']:>6}{r['device_async_ms']:>9.2f}"
-            f"{r['device_sync_ms']:>9.2f}{r['calculator_ms']:>9.2f}"
-            f"{r['md_ms']:>9.2f}{r['ns_per_day']:>9.3f}{r['overhead_ratio']:>10.2f}"
+            f"{r['model']:<10}{r['n_atoms']:>6}{r['skin']:>6.2f}"
+            f"{r['device_async_ms']:>9.2f}{r['device_sync_ms']:>9.2f}"
+            f"{r['calculator_ms']:>9.2f}{r['md_ms']:>9.2f}"
+            f"{100*r['md_rebuilds']/r['md_steps']:>10.1f}"
+            f"{r['ns_per_day']:>9.3f}{r['overhead_ratio']:>10.2f}"
         )
 
 
