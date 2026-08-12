@@ -148,4 +148,80 @@ meaningless without them:
 
 ## Results
 
-Not yet run.
+A100-80, 300 K, 0.5 fs, Triton GEMM off. All times ms/step.
+
+### ASE is not the bottleneck
+
+At lorem's default `skin=0.25`, the full `ase` MD loop costs **1.38–2.25×**
+the pure device throughput, falling with system size as the (roughly constant)
+per-step host cost is amortised:
+
+| model | N | device async | sync | calculator | ase MD | MD/async |
+|---|---|---|---|---|---|---|
+| sr | 108 | 4.55 | 6.12 | 8.22 | 10.25 | 2.25 |
+| sr | 432 | 11.49 | 13.18 | 15.78 | 18.28 | 1.59 |
+| sr | 972 | 18.48 | 20.74 | 24.07 | 27.86 | 1.51 |
+| lr | 108 | 5.93 | 7.34 | 9.80 | 11.51 | 1.94 |
+| lr | 972 | 23.95 | 26.01 | 29.10 | 33.14 | 1.38 |
+
+That is nothing like the order-of-magnitude penalty the LAMMPS folklore
+predicts, and part of it is irreducible: `sync − async` is 1.4–2.3 ms, the
+cost of needing forces on the host before proposing the next step, which no
+driver avoids. A resident-on-GPU driver's ceiling at 108 atoms is ~6.1 ms
+against ASE's 10.25 — a ~1.7× ceiling, not 10×.
+
+**The GPU is 17% utilised.** At this model and system size the run is
+launch-bound, not compute-bound, which is also why moving the integrator
+on-device would buy little. The `lorem` calculator's skin cache and in-place
+geometry update (see above) are doing the work that usually makes ASE slow.
+
+### Raising the neighbour-list skin is worth 9–25%
+
+The default `skin=0.25` rebuilds the neighbour list on **23–28% of steps**.
+Sweeping it:
+
+| model | N | best skin | ms/step | vs default | ns/day |
+|---|---|---|---|---|---|
+| sr | 108 | **1.0** | 8.70 | −15.1% | 4.22 → 4.97 |
+| sr | 432 | **1.0** | 14.66 | −19.8% | 2.36 → 2.95 |
+| sr | 972 | **1.0** | 20.78 | −25.4% | 1.55 → 2.08 |
+| lr | 108 | **1.0** | 10.48 | −9.0% | 3.75 → 4.12 |
+| lr | 432 | **1.0** | 17.64 | −17.8% | 2.01 → 2.45 |
+| lr | 972 | **1.0** | 26.81 | −19.1% | 1.30 → 1.61 |
+
+`skin=1.0` wins in every case and drops the rebuild rate to 5–6%. **`skin=2.0`
+is much worse** — 1.6–2.0× slower than 1.0 — because the padded pair arrays
+grow faster than the rebuild saving. So the optimum is genuinely near 1.0, not
+"as large as possible".
+
+A caution on which metric to optimise: `skin=2.0` has the *best* MD/async
+ratio (1.15–1.27) while being the *worst* in absolute time. The ratio measures
+how much of the step is host overhead, not how fast the step is.
+
+### An anomaly worth chasing
+
+The **device-only** time also falls from skin 0.25 to 1.0 — 18.48 → 14.93 ms
+at n=972 (sr), −19%:
+
+```
+sr  n=972:  skin0.25 18.48   skin0.5 17.84   skin1.0 14.93   skin2.0 33.94
+lr  n=972:  skin0.25 23.95   skin0.5 22.61   skin1.0 20.21   skin2.0 40.94
+```
+
+That is backwards. `async` is measured on one fixed batch with no rebuilds, so
+a larger skin means a larger neighbour list — (6.0/5.25)³ ≈ 1.5× the pairs —
+and should be *slower*. It is faster, consistently, across both models and the
+larger sizes, before turning sharply worse at skin 2.0.
+
+I do not have an explanation. The most likely candidate is the batcher's
+padding strategy putting skin 0.25 into a worse-shaped bucket than skin 1.0,
+which would mean the default skin is paying for padding it does not use — a
+real and fixable inefficiency. Worth confirming by printing the padded pair
+counts per skin before treating the 9–25% as purely a rebuild-rate effect.
+
+### Recommendation
+
+Use **`skin=1.0`** for MD with these models rather than the 0.25 default, and
+do not bother with an i-PI or LAMMPS-style driver on this system size: the
+available headroom is ~1.7× at best, most of it already recovered by the skin
+change, and the GPU is idle 83% of the time regardless.
