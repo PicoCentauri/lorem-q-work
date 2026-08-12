@@ -1,0 +1,41 @@
+train: "data/train"
+valid: "data/valid"
+seed: 42
+batcher:
+  batch_size: 8
+  coarse_strategy: powers_of_4
+  size_strategy: powers_of_4
+  fine_strategy: powers_of_4
+# 3620 : 1 : 5.6 -- NOT razor's 100 : 1 : 0.05. Weights are set from label
+# variances, and this dataset's are nothing like razor's: one composition with
+# a narrow energy spread, and a 0.9 V potential window against razor's 1.36 V
+# standard deviation.
+#
+#   target             cpmace var    razor var
+#   energy (per atom)     5.80e-5      1.40e-3
+#   forces                  0.708        0.473
+#   work function         2.27e-2        1.688
+#
+# Carrying 100:1:0.05 over unchanged would give E 0.8% / F 99.0% / W 0.2% --
+# energy and the work function effectively untrained. What transfers across
+# datasets is the loss *share*, not the weight. These weights reproduce
+# razor's tuned split of E 20.1% / F 67.8% / W 12.1%, so the sweep done there
+# carries over.
+loss_weights: {"energy": 3620.0, "forces": 1.0, "work_function": 5.6}
+checkpointers: full
+optimizer: muon
+valid_every_epoch: 2
+decay_style: warmup_cosine
+warmup_epochs: 10
+start_learning_rate: 2e-4
+gradient_clip: 1.0
+# 984 train frames at 7 real structures per batch = 141 batches/epoch, so 300
+# epochs is 42,300 gradient updates -- about a fifth of razor's 218,700. The
+# dataset is 11x smaller, so this is not update-matched to razor and the two
+# are not directly comparable; it is a reasonable first budget for a dataset
+# this size, to be revisited once the learning curves are visible.
+max_epochs: 300
+benchmark_pipeline: True
+use_wandb: False
+default_matmul_precision: "float32"
+worker_count: 4
