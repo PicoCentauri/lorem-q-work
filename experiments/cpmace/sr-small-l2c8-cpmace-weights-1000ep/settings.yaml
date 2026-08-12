@@ -1,0 +1,60 @@
+train: "data/train"
+valid: "data/valid"
+seed: 42
+batcher:
+  batch_size: 8
+  coarse_strategy: powers_of_4
+  size_strategy: powers_of_4
+  fine_strategy: powers_of_4
+# 1 : 100 : 10 (energy : forces : work function) -- the cp-MACE paper's own
+# weights for this system (SI: "weighting factors set to 100.0 for atomic
+# forces, 1.0 for energy, and 10.0 for the Fermi level predictions"). The only
+# difference from sr-small-l2c8-1000ep/ -- same model, budget and seed -- so
+# this is a clean read on whether their weighting transfers to LOREM.
+#
+# On this dataset's label variances those weights give shares of
+#
+#   E 0.0001%   F 99.68%   W 0.32%
+#
+# against 6.6 / 80.5 / 12.9 for the 1000:1:5 run beside it. Energy is
+# effectively untrained and the work function is a rounding error.
+#
+# Why it may nonetheless be right: cp-MACE reached forces ~16.5 meV/A and
+# Fermi level ~0.03-0.04 eV on this very system at these weights. A 0.32%
+# share was plenty for them.
+#
+# Why it may not transfer: their Fermi level is a *direct output head* (the SI
+# compares "node augmentation" against "global feature", both ways of
+# injecting the electron number, with E_F predicted). Ours is dE/dq obtained
+# by autograd, so supervising it reshapes E(q) and competes with the forces --
+# which is exactly what ../razor/'s weight sweep measured, where a large
+# work-function share cost ~1.7x on forces. A target that is cheap to fit as
+# an independent head is not necessarily cheap to fit as a derivative.
+#
+# That is the whole question this run answers, and it doubles as a direct
+# comparison against cp-MACE's published numbers on the same data.
+loss_weights: {"energy": 1.0, "forces": 100.0, "work_function": 10.0}
+checkpointers: full
+optimizer: muon
+valid_every_epoch: 2
+decay_style: warmup_cosine
+# 50, not razor's 10: warmup is matched in gradient updates like the total
+# budget below. razor's 10 epochs = 7,290 updates; at 141 batches/epoch that
+# is 51.7 epochs here.
+warmup_epochs: 50
+start_learning_rate: 2e-4
+gradient_clip: 1.0
+# 1000, chosen to match ../razor/'s 200-epoch budget in *gradient updates*
+# rather than epochs. 984 train frames at 7 real structures per batch = 141
+# batches/epoch, so 1000 epochs = 141,000 updates against razor's
+# 729 x 200 = 145,800 -- 97%, and a round number.
+#
+# Matching updates rather than epochs is what makes the two folders
+# comparable: the dataset here is 11x smaller, so equal epochs would have
+# meant a fifth of the training. This is the same correction applied in
+# ../razor_centre/, where the first round was confounded by exactly that.
+max_epochs: 1000
+benchmark_pipeline: True
+use_wandb: False
+default_matmul_precision: "float32"
+worker_count: 4

@@ -58,6 +58,7 @@ NOMINAL_ELECTRONS = 660.0
 VARIANTS = [
     "sr-small-l2c8-1000ep",
     "lr-small-l2c8-1000ep",
+    "sr-small-l2c8-cpmace-weights-1000ep",
 ]
 
 # Row labels for the figure: the directory names encode the loss weights,
@@ -66,6 +67,7 @@ VARIANTS = [
 LABELS = {
     "sr-small-l2c8-1000ep": "d64 l2 c8 sr\n1000 ep",
     "lr-small-l2c8-1000ep": "d64 l2 c8 LR\n1000 ep",
+    "sr-small-l2c8-cpmace-weights-1000ep": "d64 l2 c8 sr\n1:100:10",
 }
 # the summed-R2 checkpoint is named after the targets it covers -- "R2_E+F"
 # for energy+forces, "R2_E+F+W" once the work function is trained on,
@@ -84,6 +86,7 @@ SPLITS = [
 COLORS = {
     "sr-small-l2c8-1000ep": "steelblue",
     "lr-small-l2c8-1000ep": "crimson",
+    "sr-small-l2c8-cpmace-weights-1000ep": "goldenrod",
 }
 POLARIZABLE_COLORS = {True: "steelblue", False: "darkorange"}
 

@@ -4,13 +4,38 @@ Trains the `d64 l2 c8` sr/lr pair on `../../datasets/cpmace/` — constant-poten
 VASPsol++ on a 207-atom Ni complex in water, `C70 H89 N Ni O46`, fully periodic.
 Same architecture as the last `../razor/` pair, so results read across.
 
-| dir | model | targets |
+| dir | model | loss weights |
 |---|---|---|
-| `sr-small-l2c8-1000ep/` | d64 l2 c8, `lr: false` | energy + forces + work function |
-| `lr-small-l2c8-1000ep/` | same, `lr: true` (`max_degree_lr: 0`) | same |
+| `sr-small-l2c8-1000ep/` | d64 l2 c8, `lr: false` | 1000 : 1 : 5 |
+| `lr-small-l2c8-1000ep/` | same, `lr: true` (`max_degree_lr: 0`) | 1000 : 1 : 5 |
+| `sr-small-l2c8-cpmace-weights-1000ep/` | d64 l2 c8, `lr: false` | **1 : 100 : 10** (cp-MACE's) |
 
-`settings.yaml` is byte-identical between them; `model.yaml` differs on the
-`lr` line alone, so the pair isolates the Ewald head exactly as in `../razor/`.
+All train on energy + forces + work function. The first two share a
+byte-identical `settings.yaml` and differ only on the `lr` line of
+`model.yaml`, so that pair isolates the Ewald head exactly as in `../razor/`.
+The third differs from the first *only* in `loss_weights`, so it isolates the
+weighting.
+
+### The cp-MACE-weights run
+
+`sr-small-l2c8-cpmace-weights-1000ep/` uses the weights from the cp-MACE
+paper's SI verbatim — "100.0 for atomic forces, 1.0 for energy, and 10.0 for
+the Fermi level predictions" — on what is essentially the same system and
+sampling, so it doubles as a direct comparison against their published
+**16.5 meV/Å forces** and **0.03–0.04 eV Fermi level**.
+
+On this dataset's variances those weights give **E 0.0001% / F 99.68% /
+W 0.32%**: energy effectively untrained, work function a rounding error. That
+is not obviously wrong — they reached 0.03 eV on E_F at that share — but it
+may not transfer, because **their Fermi level is a direct output head and ours
+is `dE/dq` from autograd**. The SI compares "node augmentation" against
+"global feature", both ways of *injecting* the electron number with E_F
+predicted as an output. A target that is cheap to fit as an independent head
+is not necessarily cheap to fit as a derivative that must reshape E(q), and
+`../razor/`'s sweep found a large work-function share costs ~1.7× on forces
+precisely because of that coupling.
+
+Which way it goes is the question the run answers.
 
 ## The fields are not a rename of razor's
 
