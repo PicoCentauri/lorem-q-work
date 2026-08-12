@@ -39,15 +39,22 @@ checkpointers: full
 optimizer: muon
 valid_every_epoch: 2
 decay_style: warmup_cosine
-warmup_epochs: 10
+# 50, not razor's 10: warmup is matched in gradient updates like the total
+# budget below. razor's 10 epochs = 7,290 updates; at 141 batches/epoch that
+# is 51.7 epochs here.
+warmup_epochs: 50
 start_learning_rate: 2e-4
 gradient_clip: 1.0
-# 984 train frames at 7 real structures per batch = 141 batches/epoch, so 300
-# epochs is 42,300 gradient updates -- about a fifth of razor's 218,700. The
-# dataset is 11x smaller, so this is not update-matched to razor and the two
-# are not directly comparable; it is a reasonable first budget for a dataset
-# this size, to be revisited once the learning curves are visible.
-max_epochs: 300
+# 1000, chosen to match ../razor/'s 200-epoch budget in *gradient updates*
+# rather than epochs. 984 train frames at 7 real structures per batch = 141
+# batches/epoch, so 1000 epochs = 141,000 updates against razor's
+# 729 x 200 = 145,800 -- 97%, and a round number.
+#
+# Matching updates rather than epochs is what makes the two folders
+# comparable: the dataset here is 11x smaller, so equal epochs would have
+# meant a fifth of the training. This is the same correction applied in
+# ../razor_centre/, where the first round was confounded by exactly that.
+max_epochs: 1000
 benchmark_pipeline: True
 use_wandb: False
 default_matmul_precision: "float32"

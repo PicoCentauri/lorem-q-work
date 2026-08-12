@@ -6,8 +6,8 @@ Same architecture as the last `../razor/` pair, so results read across.
 
 | dir | model | targets |
 |---|---|---|
-| `sr-small-l2c8-300ep/` | d64 l2 c8, `lr: false` | energy + forces + work function |
-| `lr-small-l2c8-300ep/` | same, `lr: true` (`max_degree_lr: 0`) | same |
+| `sr-small-l2c8-1000ep/` | d64 l2 c8, `lr: false` | energy + forces + work function |
+| `lr-small-l2c8-1000ep/` | same, `lr: true` (`max_degree_lr: 0`) | same |
 
 `settings.yaml` is byte-identical between them; `model.yaml` differs on the
 `lr` line alone, so the pair isolates the Ewald head exactly as in `../razor/`.
@@ -90,13 +90,20 @@ inventing a test set from the same pool.
 
 ## Budget
 
-`max_epochs: 300`. 984 frames at 7 real structures per batch = 141
-batches/epoch, so **42,300 gradient updates** — about a fifth of razor's
-218,700. The dataset is 11× smaller, so this is *not* update-matched to razor
-and the two are not directly comparable on absolute error. It is a reasonable
-first budget for a dataset this size; revisit once the learning curves are
-visible, remembering that a flattening cosine tail is the schedule ending, not
-convergence (see `../razor/README.md`).
+`max_epochs: 1000`, matched to `../razor/`'s **200-epoch** budget in gradient
+updates rather than epochs. 984 frames at 7 real structures per batch = 141
+batches/epoch, so 1000 epochs = **141,000 updates** against razor's
+729 × 200 = 145,800 — 97%, and a round number. `warmup_epochs: 50` scales the
+same way (razor's 10 epochs = 7,290 updates = 51.7 here).
+
+Matching updates rather than epochs is what makes the two folders comparable:
+this dataset is 11× smaller, so equal epochs would have meant a fifth of the
+training. `../razor_centre/`'s first round was confounded by exactly that
+mistake, and its 675-epoch rerun is the same correction.
+
+Still worth checking the learning curves before concluding anything about
+capacity: a flattening cosine tail is the schedule ending, not convergence
+(see `../razor/README.md`).
 
 ## Things to watch
 
@@ -122,7 +129,7 @@ convergence (see `../razor/README.md`).
 - `evaluate.py` — parity and RMSE-vs-charge figures on `valid`. Derived from
   `../razor/evaluate.py` with the razor-only machinery removed (no polarizable
   flag, no `bec_z` labels, no charge sweep).
-- `sr-small-l2c8-300ep/`, `lr-small-l2c8-300ep/` — `model.yaml` +
+- `sr-small-l2c8-1000ep/`, `lr-small-l2c8-1000ep/` — `model.yaml` +
   `settings.yaml` + `srun.sh`.
 
 ## Results

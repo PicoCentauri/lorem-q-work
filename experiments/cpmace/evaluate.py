@@ -56,16 +56,16 @@ NOMINAL_ELECTRONS = 660.0
 # a question that is already settled, and mixing them in would put four
 # different loss weights in one figure.
 VARIANTS = [
-    "sr-small-l2c8-300ep",
-    "lr-small-l2c8-300ep",
+    "sr-small-l2c8-1000ep",
+    "lr-small-l2c8-1000ep",
 ]
 
 # Row labels for the figure: the directory names encode the loss weights,
 # which are constant here, so they are all prefix and no signal. Name the
 # axis that actually varies instead.
 LABELS = {
-    "sr-small-l2c8-300ep": "d64 l2 c8 sr\n300 ep",
-    "lr-small-l2c8-300ep": "d64 l2 c8 LR\n300 ep",
+    "sr-small-l2c8-1000ep": "d64 l2 c8 sr\n1000 ep",
+    "lr-small-l2c8-1000ep": "d64 l2 c8 LR\n1000 ep",
 }
 # the summed-R2 checkpoint is named after the targets it covers -- "R2_E+F"
 # for energy+forces, "R2_E+F+W" once the work function is trained on,
@@ -82,8 +82,8 @@ SPLITS = [
 ]
 
 COLORS = {
-    "sr-small-l2c8-300ep": "steelblue",
-    "lr-small-l2c8-300ep": "crimson",
+    "sr-small-l2c8-1000ep": "steelblue",
+    "lr-small-l2c8-1000ep": "crimson",
 }
 POLARIZABLE_COLORS = {True: "steelblue", False: "darkorange"}
 

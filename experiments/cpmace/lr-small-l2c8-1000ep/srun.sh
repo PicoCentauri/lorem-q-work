@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=cpmace-lr-l2c8-300ep
+#SBATCH --job-name=cpmace-lr-l2c8-1000ep
 #SBATCH --output=slurm.out
 #SBATCH --nodes 1
 #SBATCH --ntasks 1
