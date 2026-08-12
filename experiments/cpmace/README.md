@@ -40,7 +40,7 @@ in q, which the FiLM conditioning absorbs for a single-composition dataset.
 
 ## Loss weights are *not* razor's
 
-`3620 : 1 : 5.6`, not `100 : 1 : 0.05`. Weights are set from label variances,
+`1000 : 1 : 5`, not `100 : 1 : 0.05`. Weights are set from label variances,
 and this dataset's differ by one to two orders of magnitude:
 
 | target | cpmace var | razor var |
@@ -51,8 +51,28 @@ and this dataset's differ by one to two orders of magnitude:
 
 Razor's weights carried over unchanged would give **E 0.8% / F 99.0% / W 0.2%** —
 energy and the work function effectively untrained. What transfers between
-datasets is the loss *share*, not the weight. These weights reproduce razor's
-tuned E 20.1% / F 67.8% / W 12.1%, so the sweep done there carries over.
+datasets is the loss *share*, not the weight.
+
+| weights | E% | F% | W% | |
+|---|---|---|---|---|
+| `100 : 1 : 0.05` | 0.8 | 99.0 | 0.2 | razor's, carried over naively |
+| `10 : 1 : 1` | 0.08 | 96.8 | 3.1 | looks conservative, actually deletes the energy term |
+| **`1000 : 1 : 5`** | **6.6** | **80.5** | **12.9** | **used here** |
+| `3620 : 1 : 5.6` | 20.1 | 67.8 | 12.1 | exactly razor's tuned shares |
+
+`1000 : 1 : 5` is deliberately lighter on energy than razor's tuned share — a
+conservative first setting on the axis this dataset has not been swept on —
+while keeping the work-function share at essentially razor's value, since that
+is the one the charge conditioning depends on.
+
+**The large energy weight is not a hazard.** A randomly-initialised model
+predicts ~0 on top of the *fitted per-species baseline*, so the initial energy
+residual is the label spread itself (7.6 meV/atom) and these shares hold from
+step 0 — there is no transient where the energy term explodes. The weight is
+large only because it divides out a small variance. The term that *can*
+transient is the work function, whose untrained `dE/dq` is unconstrained;
+razor saw exactly that at weight 0.15 (99% of the loss at epoch 2, recovered
+by epoch 34), and warmup plus `gradient_clip: 1.0` absorbed it.
 
 ## Splits
 
