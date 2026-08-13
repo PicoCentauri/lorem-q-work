@@ -1,0 +1,61 @@
+train: "data/train"
+valid: "data/valid"
+seed: 42
+batcher:
+  batch_size: 8
+  coarse_strategy: powers_of_4
+  size_strategy: powers_of_4
+  fine_strategy: powers_of_4
+# 1000 : 1 : 5 -- NOT razor's 100 : 1 : 0.05. Weights are set from label
+# variances, and this dataset's are nothing like razor's: one composition with
+# a narrow energy spread (78 meV/atom total, against razor's ~200), and a
+# 0.9 V potential window against razor's 1.36 V standard deviation.
+#
+#   target             cpmace var    razor var
+#   energy (per atom)     5.80e-5      1.40e-3
+#   forces                  0.708        0.473
+#   work function         2.27e-2        1.688
+#
+# Carrying 100:1:0.05 over unchanged would give E 0.8% / F 99.0% / W 0.2% --
+# energy and the work function effectively untrained. What transfers across
+# datasets is the loss *share*, not the weight.
+#
+# Resulting shares here: E 6.6% / F 80.5% / W 12.9%. That is deliberately
+# less energy than razor's tuned 20.1% / 67.8% / 12.1% (which would need
+# 3620 : 1 : 5.6): a conservative first setting on the axis this dataset has
+# not been swept on, keeping the work-function share -- the one the charge
+# conditioning depends on -- essentially at razor's value.
+#
+# The large energy weight is not a hazard despite the round number. A
+# randomly-initialised model predicts ~0 on top of the *fitted per-species
+# baseline*, so the initial energy residual is the label spread itself
+# (7.6 meV/atom) and these shares hold from step 0 -- there is no transient
+# where the energy term explodes. The term that can transient is the work
+# function, whose untrained dE/dq is unconstrained; razor saw exactly that at
+# weight 0.15 (99% of the loss at epoch 2, recovered by epoch 34) and warmup
+# plus gradient_clip absorbed it.
+loss_weights: {"energy": 1000.0, "forces": 1.0, "work_function": 5.0}
+checkpointers: full
+optimizer: muon
+valid_every_epoch: 2
+decay_style: warmup_cosine
+# 50, not razor's 10: warmup is matched in gradient updates like the total
+# budget below. razor's 10 epochs = 7,290 updates; at 141 batches/epoch that
+# is 51.7 epochs here.
+warmup_epochs: 50
+start_learning_rate: 2e-4
+gradient_clip: 1.0
+# 1000, chosen to match ../razor/'s 200-epoch budget in *gradient updates*
+# rather than epochs. 984 train frames at 7 real structures per batch = 141
+# batches/epoch, so 1000 epochs = 141,000 updates against razor's
+# 729 x 200 = 145,800 -- 97%, and a round number.
+#
+# Matching updates rather than epochs is what makes the two folders
+# comparable: the dataset here is 11x smaller, so equal epochs would have
+# meant a fifth of the training. This is the same correction applied in
+# ../razor_centre/, where the first round was confounded by exactly that.
+max_epochs: 1000
+benchmark_pipeline: True
+use_wandb: False
+default_matmul_precision: "float32"
+worker_count: 4
