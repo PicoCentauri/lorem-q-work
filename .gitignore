@@ -32,3 +32,13 @@ experiments/*/*/slurm.out
 Makefile
 *.mk
 RUNS.md
+
+# natcomm2025 ships as DeepMD .npy plus the archives it was extracted from and
+# a 93 MB frozen TF model. Only the converted extxyz is tracked (via LFS);
+# datasets/natcomm2025/convert.py regenerates it from these.
+datasets/natcomm2025/data_set/
+datasets/natcomm2025/*.tar.gz
+datasets/natcomm2025/*.zip
+datasets/natcomm2025/*.pb
+datasets/natcomm2025/OH-strus/
+datasets/natcomm2025/*.pdf
