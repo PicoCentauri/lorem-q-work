@@ -1,0 +1,19 @@
+model:
+  lorem.LoremQ:
+    # d64 l2 c8 -- the same architecture as the last ../razor/ and ../cpmace/
+    # pairs, so the three datasets read across at fixed model.
+    # lr: true, max_degree_lr 0 -- monopole Ewald. This system is fully
+    # periodic (pbc = T T T) like ../cpmace/, so the 3D Ewald path is used
+    # rather than razor's 2D-mixed slab variant. Note the cell is a slab with
+    # vacuum along x and a compensating charge plate in that vacuum, so the
+    # long-range electrostatics the head sees is not the same situation as
+    # either previous folder.
+    cutoff: 5.0
+    max_degree_lr: 0
+    num_features: 64
+    max_degree: 2
+    num_radial: 16
+    num_message_passing: 1
+    num_spherical_features: 8
+    lr: true
+    initialize_node_features: True

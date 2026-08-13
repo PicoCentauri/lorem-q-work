@@ -165,14 +165,23 @@ def main():
         if len(f) >= 3 and np.ptp(f) > 0.05:
             c2, c1, _ = np.polyfit(f, e, 2)
             dEdf = c1 + 2 * c2 * f
+            curv = 2 * c2
         else:
             c1 = np.polyfit(f, e, 1)[0] if np.ptp(f) > 0 else np.nan
             dEdf = np.full_like(f, c1)
+            curv = np.nan
             n_lin += 1
         for j, i in enumerate(idx):
             records[i]["group"] = gid
             records[i]["work_function"] = -float(dEdf[j])
             records[i]["n_in_group"] = len(idx)
+            # d2E/dq2 = 1/C for this geometry. Constant within a group, stored
+            # per frame so it can be filtered without recomputation. This is
+            # the analogue of razor's `polarizable` flag: it is how a frame
+            # outside ordinary capacitive response is spotted. See README --
+            # the low-curvature tail is chemistry (Volmer-step H adsorption),
+            # not breakdown, so it is recorded rather than screened.
+            records[i]["d2E_dq2"] = float(curv)
     if n_lin:
         print(f"  {n_lin} geometries fell back to a linear fit")
 
@@ -180,6 +189,12 @@ def main():
     q = np.array([-r["fparam"] for r in records])
     print(f"\n  total_charge  {q.min():+.4f} .. {q.max():+.4f}")
     print(f"  work_function {wf.min():+.3f} .. {wf.max():+.3f}  (mean {wf.mean():+.3f}, std {wf.std():.3f})")
+    cv = np.array([r["d2E_dq2"] for r in records])
+    cvg = np.array([r["d2E_dq2"] for r in records if r["n_in_group"]])
+    med = np.nanmedian(cv)
+    print(f"  d2E/dq2       {np.nanmin(cv):.3f} .. {np.nanmax(cv):.3f}  (median {med:.3f})")
+    print(f"    frames >20% off the median: {int((np.abs(cv-med)/med > 0.20).sum())} "
+          f"({100*(np.abs(cv-med)/med > 0.20).mean():.1f}%)")
     bad = ~np.isfinite(wf)
     if bad.any():
         raise RuntimeError(f"{bad.sum()} frames have no usable dE/dfparam")
@@ -199,6 +214,7 @@ def main():
         a.info["fparam"] = r["fparam"]
         a.info["group"] = r["group"]
         a.info["n_in_group"] = r["n_in_group"]
+        a.info["d2E_dq2"] = r["d2E_dq2"]
         # "sys/" prefix is not decoration: six of the directories are named
         # "0.60".."1.10", and extxyz round-trips a bare "0.60" as the float
         # 0.6, which would leave `system` typed float for those and str for

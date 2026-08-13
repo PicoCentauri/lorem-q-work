@@ -117,6 +117,53 @@ Energy-per-atom variance after the baseline is **3.03e-05**, against cpmace's
 5.80e-05 and razor's 1.40e-03 — so loss weights must be recomputed from these
 variances rather than carried over, as they were for cpmace.
 
+## Is there a dielectric-breakdown analogue? Checked — and it is chemistry
+
+razor ships a `polarizable` flag marking frames outside linear response; this
+dataset ships nothing equivalent, so the same check was run directly: is
+d²E/dq² (= 1/C) constant across the dataset?
+
+**It is not, and the deviation is one-sided.** Percentiles (V/e):
+
+| min | 1% | 5% | 25% | 50% | 75% | 95% | max |
+|---|---|---|---|---|---|---|---|
+| 3.243 | 3.823 | 5.113 | 7.443 | **7.678** | 7.734 | 7.806 | 7.907 |
+
+The upper tail is tight; the lower runs to less than half the median. **10.6%
+of frames sit more than 20% below it**, and their quadratic fits are good to
+2–9 meV, so this is real structure and not fit noise.
+
+What those frames are:
+
+| | geometries | adsorbed H (median) |
+|---|---|---|
+| normal curvature | 2479 | 24 |
+| >20% off median | 271 | **25** |
+
+They carry **one extra adsorbed hydrogen**, and 66–80% of them come from the
+`data.000-*` DP-GEN sets. That is the Volmer step (H⁺ + e⁻ → H\*) which the
+paper's modelled system is built around: added electrons partly go into
+forming a Pt–H bond instead of charging the interface, so E(q) is softer and
+the apparent capacitance higher.
+
+**So this is the opposite of razor's situation.** razor's non-polarizable
+frames are an artefact of over-charging past dielectric breakdown and are
+dropped. These are the reaction events the dataset exists to capture, and
+dropping them would remove exactly the physics a constant-potential model is
+wanted for.
+
+They are therefore **flagged, not screened**: every frame carries `d2E_dq2`,
+so a filter is one line if a purely capacitive subset is ever wanted:
+
+```python
+frames = [a for a in frames if abs(a.info["d2E_dq2"] - 7.676) / 7.676 < 0.20]
+```
+
+Worth knowing when reading model errors: the work function on these frames is
+governed by bond formation rather than by the capacitor, so a model that fits
+the capacitive frames well may still do poorly here — and that subset is the
+interesting one.
+
 ## Splitting: use `group`, never split within it
 
 `group` is the geometry id. The 4–84 charge states of one geometry share atomic
@@ -127,8 +174,8 @@ train and validation. This is razor's `struc_pk` situation exactly. Split on
 ## Files
 
 - `natcomm2025.xyz` — 417 MB, the only tracked artefact (git-lfs). Fields:
-  `total_charge`, `work_function`, `fparam`, `group`, `n_in_group`, `duplicate`,
-  `system`; energy and forces on the calculator.
+  `total_charge`, `work_function`, `fparam`, `group`, `n_in_group`,
+  `d2E_dq2`, `system`; energy and forces on the calculator.
 - `convert.py` — regenerates the xyz from `data_set/`. Pure numpy + ase;
   **dpdata is not needed**, DeepMD's on-disk format is `.npy` plus two text
   files, so no extra dependency or venv was introduced.

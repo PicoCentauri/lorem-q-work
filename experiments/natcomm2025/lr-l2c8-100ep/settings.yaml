@@ -1,0 +1,41 @@
+train: "data/train"
+valid: "data/valid"
+seed: 42
+batcher:
+  batch_size: 8
+  coarse_strategy: powers_of_4
+  size_strategy: powers_of_4
+  fine_strategy: powers_of_4
+# 1000 : 1 : 0.01 -> E 6.8% / F 81.3% / W 11.9%, essentially ../cpmace/'s
+# shares (6.6 / 80.5 / 12.9).
+#
+# The work-function weight is 500x SMALLER than cpmace's 5, which is not a
+# typo: weights follow label variances and this dataset's W variance is 5.32
+# against cpmace's 0.0227, a factor of 233. Every geometry here is evaluated
+# at 4-18 electron counts spanning ~1.2 e, and dW/dq = 7.68 V/e, so dE/dq has
+# a huge dynamic range. cpmace's 1000:1:5 would put 98.6% of the loss on W.
+#
+#   target             natcomm2025   cpmace     razor
+#   energy (per atom)     3.02e-5    5.80e-5   1.40e-3
+#   forces                  0.362      0.708     0.473
+#   work function            5.32     2.27e-2      1.69
+loss_weights: {"energy": 1000.0, "forces": 1.0, "work_function": 0.01}
+checkpointers: full
+optimizer: muon
+valid_every_epoch: 2
+decay_style: warmup_cosine
+# 3, not razor's 10: matched on gradient updates like the budget below.
+# razor's 10 epochs = 7,290 updates; at 2,159 batches/epoch that is 3.4 here.
+warmup_epochs: 3
+start_learning_rate: 2e-4
+gradient_clip: 1.0
+# 15,107 train frames at 7 real structures per batch = 2,159 batches/epoch, so
+# 100 epochs = 215,900 gradient updates -- within 1% of ../razor/'s l2c8
+# 300-epoch budget (729 x 300 = 218,700). This is the largest dataset in the
+# repo, so epochs and updates are wildly different units here: razor's 200
+# epochs would be only 68 epochs of this.
+max_epochs: 100
+benchmark_pipeline: True
+use_wandb: False
+default_matmul_precision: "float32"
+worker_count: 4
