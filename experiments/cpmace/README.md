@@ -159,4 +159,70 @@ capacity: a flattening cosine tail is the schedule ending, not convergence
 
 ## Results
 
-Not yet run.
+All three ran the full 1000 epochs. Converged **validation** RMSE (last
+validation block), on the 109-frame held-out split:
+
+| run | weights | E share | E (meV/atom) | F (meV/Å) | Φ (V) | wall |
+|---|---|---|---|---|---|---|
+| `sr-small-l2c8-1000ep` | 1000:1:5 | 6.6% | **0.600** | 40.70 | 0.0421 | 3h47m |
+| `lr-small-l2c8-1000ep` | 1000:1:5 | 6.6% | 0.631 | **40.24** | **0.0376** | 4h34m |
+| `sr-...-cpmace-weights-` | 1:100:10 | 0.0001% | 1.609 | 62.66 | 0.0595 | 3h45m |
+
+R²: 99.47/99.77/89.65, 99.42/99.77/91.78, 96.21/99.45/79.38.
+
+### cp-MACE's weights lose on forces, the target they weight at 99.68%
+
+This is the result worth recording. The `1:100:10` run puts **99.68% of its
+loss on forces** and comes out **54% worse on forces** (62.66 vs 40.70 meV/Å)
+than the run that puts 80.5% there — while also being 2.7× worse on energy and
+1.4× worse on the work function. It loses on every target, including its own.
+
+That inverts what `../razor/`'s sweep found, where force error tracked the
+force share monotonically (99.7% → 23.5, 73.6% → 32.6, 60.5% → 33.7,
+48.2% → 40.6 meV/Å). Here more force share gives worse forces.
+
+Note this is not a learning-rate artefact. The `1:100:10` loss is ~81× larger
+in absolute magnitude, but `gradient_clip: 1.0` normalises the update, so what
+differs between the runs is the *direction* of the gradient, not its size.
+
+The likeliest explanation is the one `../razor/README.md` already argues, seen
+from the other side: **forces constrain ∂E/∂r and say nothing about ∂E/∂q.**
+In a charge-conditioned model the energy and work-function terms are the only
+things that pin down the charge direction. Starve both — energy at 0.0001%,
+work function at 0.32% — and the FiLM conditioning becomes an effectively
+unconstrained nuisance input that can absorb variance which ought to be
+explained by geometry. That would degrade forces too, which is what is
+observed. Plausible, not established; a run at `1:100:10` with charge
+conditioning disabled would test it directly.
+
+**Why cp-MACE can get away with it:** their Fermi level is a separate output
+head, so their electron-number input carries no thermodynamic-consistency
+obligation. Ours is `dE/dq`, so E(q) has to be right. The weighting is sound
+for their architecture and does not transfer to a derivative formulation.
+
+### Against cp-MACE's published numbers
+
+Same system and sampling, so their SI figures are a meaningful reference:
+
+| | cp-MACE (SI) | this work (best) |
+|---|---|---|
+| forces | 16.5 meV/Å | 40.24 meV/Å |
+| Fermi level / Φ | 0.03–0.04 eV | **0.0376 V** |
+
+**The work function matches their published accuracy.** Forces are 2.4× worse,
+but not on equal terms: their MACE is `128x0e + 128x1o` against our d64 l2 c8
+(~300k parameters), and their final training set is larger — the SI reports
+16.9 → 8.67 meV/Å from adding force-only structures, which we do not have.
+Closing the force gap is a model-size and data question, not a weighting one.
+
+### The Ewald head helps the charge response, again
+
+`lr` beats `sr` on the work function by 11% (0.0376 vs 0.0421) and on forces
+by 1%, at 21% more wall clock. The Φ gain reproduces `../razor/`, where the
+Ewald head was consistently the strongest lever on the charge response. The
+force gain does not: razor saw 15% there against 1% here.
+
+Worth noting this is the **first 3D-periodic** long-range run in the repo —
+every previous `lr` run was razor's slab, using the 2D-mixed Ewald variant.
+Whether the small force gain reflects the 3D path, the system, or the
+water-dominated environment is untested.
