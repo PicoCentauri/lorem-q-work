@@ -1,0 +1,35 @@
+model:
+  lorem.LoremQ:
+    # Capacity probe, not a production candidate: how good does LOREM get on
+    # cpmace forces if the budget is spent the way cp-MACE spends it?
+    #
+    # Three changes at once against sr-small-l2c8-1000ep/ (d64 l2 c8, mp 1),
+    # deliberately -- this is a "how far can it go" run, and separating the
+    # three costs three jobs. If it wins, the follow-up is an ablation.
+    #
+    #   num_message_passing 1 -> 2   the untested lever. One step gives a 5 A
+    #                                receptive field, two gives ~10 A. MACE
+    #                                conventionally uses two interaction
+    #                                blocks; every run in this repo so far has
+    #                                used one, and the class default is 0.
+    #   num_spherical_features 8->16 ../razor/ showed this is the axis that
+    #                                pays: c=16 at l=2 (144 numbers/atom)
+    #                                matched the full d128 l6 c4 model, while
+    #                                c=8 (72) lost 15% on forces.
+    #   num_features 64 -> 128       scalar capacity; parameters go as d^2.
+    #
+    # max_degree stays at 2. cp-MACE reaches 16.5 meV/A with 128x0e + 128x1o,
+    # i.e. l <= 1 with 128 channels -- low angular resolution, high channel
+    # count. LOREM's default shape is the opposite, and razor's size sweep
+    # found channels beat degrees at fixed cost. l=2 also keeps the CG cost at
+    # ~3% of l=6, so the equivariant capacity here (16 x 9 = 144 numbers/atom,
+    # 288 with two MP steps) is bought cheaply.
+    cutoff: 5.0
+    max_degree_lr: 0
+    num_features: 128
+    max_degree: 2
+    num_radial: 16
+    num_message_passing: 2
+    num_spherical_features: 16
+    lr: false
+    initialize_node_features: True
