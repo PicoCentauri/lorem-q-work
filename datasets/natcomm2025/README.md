@@ -6,8 +6,8 @@ model feeds the electron number straight into the network's input layer.
 
 | | |
 |---|---|
-| frames | 19,538 |
-| distinct geometries | 2,750 (each at 4–84 electron counts, median 6) |
+| frames | 16,821 (19,538 source, 2,717 exact duplicates dropped) |
+| distinct geometries | 2,750 (each at 4–18 electron counts, median 6) |
 | composition | Pt₁₀₀ H₉₇ O₃₆ — 233 atoms |
 | cell | slab normal **x** (30.888 Å); surface area \|b×c\| = 171.20 Å² |
 | pbc | T T T |
@@ -90,13 +90,32 @@ curvature is dominated by the supercell's compensating capacitor, not by the
 electrochemical double layer. The labels are faithful to the calculations; they
 are not a physical electrode capacitance.
 
-## Duplicates
+## Duplicates are dropped
 
-**2,717 frames (13.9%) are exact duplicates** — identical geometry, `fparam`,
-energy *and* forces. They are flagged `duplicate=True` rather than removed, so
-the file stays faithful to the source and dropping them is a one-liner. They
-cannot leak across a split: a duplicate shares its geometry, so the `group` key
-already keeps it on one side.
+**2,717 of the 19,538 source frames (13.9%) were exact duplicates** — identical
+geometry, `fparam`, energy *and* forces. They carry no information and only
+reweight whatever they repeat, so `convert.py` drops them
+(`DROP_DUPLICATES = True`; set False to keep them, flagged `duplicate=True`).
+16,821 frames remain, and the largest geometry group shrinks from 84 to 18.
+
+Groups are recomputed after the drop, so the E(`fparam`) fits see only
+surviving frames.
+
+## The energy baseline is essential, and marathon fits it
+
+Raw energies are ~−347,303 eV. float32 spacing at that magnitude is **31.2 meV**,
+so the energy signal (residual std 1.28 eV, 5.5 meV/atom) would be destroyed by
+rounding if it were used directly. `marathon.grain.prepare()` fits a per-species
+elemental baseline and the model learns the residual, whose float32 spacing is
+0.48 µeV. Nothing needs doing by hand -- but this is load-bearing here, not a
+convenience.
+
+Composition is constant, so the per-species split is degenerate: only the total
+offset is identifiable. That is harmless, and identical to cpmace.
+
+Energy-per-atom variance after the baseline is **3.03e-05**, against cpmace's
+5.80e-05 and razor's 1.40e-03 — so loss weights must be recomputed from these
+variances rather than carried over, as they were for cpmace.
 
 ## Splitting: use `group`, never split within it
 
@@ -107,7 +126,7 @@ train and validation. This is razor's `struc_pk` situation exactly. Split on
 
 ## Files
 
-- `natcomm2025.xyz` — 484 MB, the only tracked artefact (git-lfs). Fields:
+- `natcomm2025.xyz` — 417 MB, the only tracked artefact (git-lfs). Fields:
   `total_charge`, `work_function`, `fparam`, `group`, `n_in_group`, `duplicate`,
   `system`; energy and forces on the calculator.
 - `convert.py` — regenerates the xyz from `data_set/`. Pure numpy + ase;

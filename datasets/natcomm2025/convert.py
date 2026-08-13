@@ -66,6 +66,12 @@ from ase.io import write
 ROOT = Path("data_set")
 OUT = Path("natcomm2025.xyz")
 
+# Exact duplicates -- identical geometry, fparam, energy AND forces -- are
+# 13.9% of the source. They carry no information and only reweight whatever
+# they repeat, so they are dropped. Set False to keep them (flagged
+# `duplicate=True`) if fidelity to the source matters more than size.
+DROP_DUPLICATES = True
+
 # DeepMD data is fully periodic; the slab normal is x (the long cell vector).
 PBC = (True, True, True)
 
@@ -137,7 +143,18 @@ def main():
         r["duplicate"] = h in seen
         n_dup += r["duplicate"]
         seen.add(h)
-    print(f"  {n_dup} exact duplicate frames ({100*n_dup/len(records):.1f}%), flagged not removed")
+    print(f"  {n_dup} exact duplicate frames ({100*n_dup/len(records):.1f}%)"
+          f"{' -- dropped' if DROP_DUPLICATES else ' -- flagged, kept'}")
+    if DROP_DUPLICATES:
+        records = [r for r in records if not r["duplicate"]]
+        # regroup: dropping frames changes group membership and sizes, and the
+        # E(fparam) fits below must see only the surviving frames
+        groups = defaultdict(list)
+        for i, r in enumerate(records):
+            groups[hashlib.md5(np.ascontiguousarray(r["coord"]).tobytes()).hexdigest()].append(i)
+        sizes = np.array([len(v) for v in groups.values()])
+        print(f"  after dropping: {len(records)} frames, {len(groups)} geometries, "
+              f"frames per geometry min {sizes.min()} median {int(np.median(sizes))} max {sizes.max()}")
 
     n_lin = 0
     for gid, (key, idx) in enumerate(sorted(groups.items())):
