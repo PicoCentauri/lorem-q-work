@@ -155,6 +155,31 @@ def load_frames(name, polarizable_only, n=None):
     return frames
 
 
+# Attributes that used to live on Lorem and have since moved to the LoremQ
+# subclass. A checkpoint written before that move records the attribute
+# against the base class, and Lorem.__init__ now rejects the keyword -- even
+# when the value is false, which is the case for every plain-Lorem run here.
+# Strip those keys rather than editing the checkpoints: they are generated
+# artifacts that can only be reproduced by retraining, and this script is
+# meant to read checkpoints from either lorem version.
+LOREMQ_ONLY_KEYS = ("predict_bec",)
+
+
+def _drop_dead_keys(cfg):
+    for cls, kwargs in cfg.items():
+        if cls.rsplit(".", 1)[-1] == "LoremQ" or not isinstance(kwargs, dict):
+            continue
+        for key in LOREMQ_ONLY_KEYS:
+            if kwargs.pop(key, None):
+                # only false is safe to drop silently -- a true here would
+                # mean the checkpoint really wants behaviour the base class
+                # cannot provide, and quietly ignoring that would be wrong
+                raise RuntimeError(
+                    f"{cls} sets {key}=True but only LoremQ implements it"
+                )
+    return cfg
+
+
 def load_checkpoint(variant):
     candidates = sorted(
         p
@@ -584,7 +609,7 @@ def plot_rmse_vs_charge(all_rows, split, name):
             axes[row][col].set_ylim(0, col_max[col])
 
     hatched = "hatched bars: n < %d structures in that bin" % MIN_BIN_N
-    fig.suptitle(f"razor -- {split} -- RMSE vs charge ({hatched})")
+    fig.suptitle(f"cpmace -- {split} -- RMSE vs charge ({hatched})")
     Path("figures").mkdir(exist_ok=True)
     fig.savefig(Path("figures") / name, transparent=True, bbox_inches="tight")
     plt.close(fig)
@@ -676,7 +701,7 @@ def plot_split(all_rows, split, name):
             linespacing=1.4,
         )
 
-    fig.suptitle(f"razor -- {split}")
+    fig.suptitle(f"cpmace -- {split}")
     Path("figures").mkdir(exist_ok=True)
     fig.savefig(Path("figures") / name, transparent=True, bbox_inches="tight")
     plt.close(fig)

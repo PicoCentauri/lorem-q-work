@@ -130,6 +130,33 @@ Still worth checking the learning curves before concluding anything about
 capacity: a flattening cosine tail is the schedule ending, not convergence
 (see `../razor/README.md`).
 
+## 1000 epochs is not the limit; data is
+
+The force curve is still schedule-limited at the end -- improvement per
+100-epoch window over the second half runs -13.4, -7.6, -5.3, -2.8, -0.68%,
+tracking the cosine down to lr = 0, the same signature `../razor/` showed at
+200 epochs. So a longer run *would* improve forces.
+
+It should not be run anyway, because the model is overfitting hard:
+
+| epoch | train | valid | valid/train |
+|---|---|---|---|
+| 200 | 0.0165 | 0.0244 | 1.48 |
+| 500 | 0.00435 | 0.0129 | 2.98 |
+| 800 | 0.00185 | 0.0111 | **6.01** |
+
+razor's equivalent gap went 1.24 -> 1.52 over its last 100 epochs. Here it is
+6.0 and climbing, on 984 frames of a single composition against razor's
+10,931. And the other two targets have already turned: **the work function
+bottomed near epoch 700** (0.04128) and drifted back up to 0.0421, while
+energy plateaued around epoch 600. The checkpointer picking an epoch-550ish
+model for `sr` is the same fact seen from the other side.
+
+So more epochs trades a few percent of force accuracy for a worse charge
+response -- the thing this dataset exists to model. **The binding constraint
+is data.** cp-MACE's SI reports the same: 16.9 -> 8.67 meV/Å purely from
+adding force-only structures.
+
 ## Things to watch
 
 - **The Ewald head runs in 3D here for the first time.** cpmace is
@@ -169,6 +196,36 @@ validation block), on the 109-frame held-out split:
 | `sr-...-cpmace-weights-` | 1:100:10 | 0.0001% | 1.609 | 62.66 | 0.0595 | 3h45m |
 
 R²: 99.47/99.77/89.65, 99.42/99.77/91.78, 96.21/99.45/79.38.
+
+### `evaluate.py` scores a different model than the last epoch
+
+The checkpointer saves on **best summed R² (`R2_E+F+W`), not the final
+epoch**, so `evaluate.py` loads whichever epoch won that, and its numbers are
+not the table above:
+
+| run | | E | F | Φ |
+|---|---|---|---|---|
+| `sr` 1000:1:5 | last epoch | 0.600 | **40.70** | 0.0421 |
+| | evaluated checkpoint | 0.66 | **50.02** | **0.0409** |
+| `lr` 1000:1:5 | last epoch | 0.631 | 40.24 | 0.0376 |
+| | evaluated checkpoint | 0.62 | 41.58 | 0.0373 |
+| cp-MACE weights | last epoch | 1.609 | 62.66 | 0.0595 |
+| | evaluated checkpoint | 1.62 | 62.69 | 0.0581 |
+
+`lr` and the cp-MACE-weights run barely move, but **`sr`'s checkpoint is 23%
+worse on forces and better on Φ than its final epoch** — it was selected from
+an earlier epoch, around 550-600 judging by the force curve. That is early
+stopping working as intended on a model that overfits (see below), but it has
+a consequence for reading the comparison:
+
+- **At matched epoch (the last block), `sr` and `lr` are tied on forces**
+  (40.70 vs 40.24).
+- **At their selected checkpoints they are not** (50.02 vs 41.58), because
+  the two were stopped at different epochs.
+
+The last-epoch row is the fair architecture comparison; the checkpoint row is
+what you would actually deploy. Quote whichever matches the question, and say
+which.
 
 ### cp-MACE's weights lose on forces, the target they weight at 99.68%
 
@@ -218,7 +275,9 @@ Closing the force gap is a model-size and data question, not a weighting one.
 ### The Ewald head helps the charge response, again
 
 `lr` beats `sr` on the work function by 11% (0.0376 vs 0.0421) and on forces
-by 1%, at 21% more wall clock. The Φ gain reproduces `../razor/`, where the
+by 1% at matched epoch — or by 17% on forces at the selected checkpoints, for
+the checkpoint-selection reason above rather than an architectural one. Both
+at 21% more wall clock. The Φ gain reproduces `../razor/`, where the
 Ewald head was consistently the strongest lever on the charge response. The
 force gain does not: razor saw 15% there against 1% here.
 
