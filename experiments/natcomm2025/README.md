@@ -4,9 +4,15 @@ Pt(111)/water under grand-canonical DFT, from `../../datasets/natcomm2025/`
 (Nat. Commun. 2025, `s41467-025-58871-7`). 233 atoms, Pt₁₀₀H₉₇O₃₆, fully
 periodic, slab normal along **x**.
 
-**No model is set up yet.** The architecture question is being settled on
-`../cpmace/` first; `prepare.py` has been run so `data/` is ready, and
-`evaluate.py`'s `VARIANTS` is empty until run directories exist.
+| dir | model | loss weights | epochs |
+|---|---|---|---|
+| `sr-l2c8-100ep/` | d64 l2 c8, `lr: false` | 1000 : 1 : 0.01 | 100 |
+| `lr-l2c8-100ep/` | same, `lr: true` (`max_degree_lr: 0`) | 1000 : 1 : 0.01 | 100 |
+
+`model.yaml` is byte-identical to `../cpmace/`'s l2c8 pair, so the two datasets
+read across at fixed model; `settings.yaml` is identical between the two here,
+differing only on the `lr` line of `model.yaml`, so the pair isolates the Ewald
+head as in the other folders.
 
 ## Data
 
@@ -49,6 +55,23 @@ points.
 There is **no test set**. The source ships none, and carving one out of the
 same DP-GEN trajectories would not be independent.
 
+## All frames are trained on, reactive ones included
+
+No screening is applied. The max-force cut inherited from `../razor/` is a
+no-op here (largest force 6.42 eV/Å), and the anomalous-capacitance frames are
+kept **on purpose**: 10.6% of frames have d²E/dq² more than 20% off the
+7.676 V/e median, and those are Volmer-step configurations carrying an extra
+adsorbed hydrogen, not dielectric breakdown. See
+`../../datasets/natcomm2025/README.md`. Reactions are the point of this
+dataset, so they stay in.
+
+**What to watch for because of that:** on those ~10% of frames the work
+function is governed by bond formation rather than by the capacitor. A model
+can fit the capacitive majority well and still be poor there, and a pooled
+work-function RMSE will hide it. `d2E_dq2` rides along in the xyz precisely so
+the metric can be split on it — worth doing before drawing conclusions about
+`dE/dq` accuracy on this dataset.
+
 ## Loss weights must be recomputed — cpmace's are badly wrong here
 
 Weights follow label variances, and this dataset's are unlike either previous
@@ -72,9 +95,11 @@ opposite direction to cpmace's:
 | **`3550 : 1 : 0.01`** | **20.1** | **67.8** | **12.1** | reproduces razor's tuned shares |
 
 So the work function needs a **much smaller** weight here, not a larger one —
-the opposite of the intuition that carried over from cpmace. `3550 : 1 : 0.01`
-is the starting point when a model is set up; whether razor's shares are right
-for this dataset is untested.
+the opposite of the intuition that carried over from cpmace.
+
+The runs use **`1000 : 1 : 0.01`** → E 6.8% / F 81.3% / W 11.9%, essentially
+`../cpmace/`'s shares rather than razor's heavier energy term. Whether razor's
+20% energy share would do better here is untested.
 
 ## Notes for when training starts
 

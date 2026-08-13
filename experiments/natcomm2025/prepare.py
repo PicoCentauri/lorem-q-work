@@ -9,6 +9,26 @@ the DeepMD `fparam` (the electron number Nₑ), so nothing is converted here:
 
 See that folder's README for why, and for the confirmation against the paper.
 
+ALL FRAMES ARE TRAINED ON, INCLUDING THE REACTIVE ONES
+------------------------------------------------------
+No screening of any kind is applied here -- deliberately. Two candidates were
+considered and both rejected:
+
+  * max force. The largest force in the dataset is 6.42 eV/A, well under the
+    10 eV/A cut used in ../razor/. A screen would be a no-op.
+  * anomalous d2E/dq2. 10.6% of frames have a capacitance more than 20% off
+    the 7.676 V/e median. In ../razor/ the analogous frames are dielectric
+    breakdown and are dropped; here they are the Volmer step -- they carry an
+    extra adsorbed hydrogen, and added electrons form a Pt-H bond instead of
+    charging the interface. Those are reaction events, which is precisely what
+    a constant-potential model is wanted for, so they are kept.
+
+The consequence is worth stating plainly: **on ~10% of frames the work
+function is set by bond formation rather than by capacitive charging.** A
+model can fit the capacitive majority well and still do badly there, and a
+pooled RMSE will not show it. `d2E_dq2` is carried through the xyz, so
+evaluate.py can split the metrics on it.
+
 THE SPLIT IS BY GEOMETRY, NOT BY FRAME
 --------------------------------------
 Each of the 2750 distinct geometries appears at 4-18 electron counts sharing

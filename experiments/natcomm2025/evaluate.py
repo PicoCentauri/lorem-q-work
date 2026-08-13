@@ -55,14 +55,18 @@ VALID_FRACTION = 0.10
 # lr, sr-wf, sr-wf0.05, sr-e100-wf0.1) are deliberately left out: they answer
 # a question that is already settled, and mixing them in would put four
 # different loss weights in one figure.
-# Empty until a model is chosen -- the architecture question is being settled
-# on ../cpmace/ first. Add run directory names here.
-VARIANTS = []
+VARIANTS = [
+    "sr-l2c8-100ep",
+    "lr-l2c8-100ep",
+]
 
 # Row labels for the figure: the directory names encode the loss weights,
 # which are constant here, so they are all prefix and no signal. Name the
 # axis that actually varies instead.
-LABELS = {}
+LABELS = {
+    "sr-l2c8-100ep": "d64 l2 c8 sr\n100 ep",
+    "lr-l2c8-100ep": "d64 l2 c8 LR\n100 ep",
+}
 # the summed-R2 checkpoint is named after the targets it covers -- "R2_E+F"
 # for energy+forces, "R2_E+F+W" once the work function is trained on,
 # "R2_E+F+W+B" with the Born effective charges on top. Resolve it per variant
@@ -80,7 +84,10 @@ SPLITS = [
     ("valid", "natcomm2025", False),
 ]
 
-COLORS = {}
+COLORS = {
+    "sr-l2c8-100ep": "steelblue",
+    "lr-l2c8-100ep": "crimson",
+}
 POLARIZABLE_COLORS = {True: "steelblue", False: "darkorange"}
 
 # 8, not 32: this script now computes bec_z via jvp(jvp(energy)) for every
