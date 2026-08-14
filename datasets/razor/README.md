@@ -75,3 +75,42 @@ bias_charge = atoms.info["bias_charge"]      # e, model input
 work_function = atoms.info["work_function"]  # V, dE/dq target
 struc_pk = atoms.info["struc_pk"]            # split key -- never split within one struc_pk
 ```
+
+## The publication subset (`train_zausi.xyz` / `test_zausi.xyz`)
+
+`Publication_data_for_ploche/{train,test}.xyz` is **`razor_centre` restricted
+to |q| ≤ 1.0 e**, not a separate dataset. Verified rather than assumed:
+
+- all 5113 of its frames match ours on `(struc_pk, charge)`, 0 unmatched
+- positions, cell, pbc and species order are **bit-identical**
+- `DFT_wf` == our `work_function` exactly (corr 1.000000, max diff 0.0000)
+- `DFT_d2Edq2` == the curvature of our 3-point stencil exactly (corr 1.0000)
+- **100%** of its frames have `bias_charge == q_MD`, i.e. every one is a
+  stencil centre, and 100% of its `struc_pk` are in `razor_centre.xyz`
+
+So it is the same calculations, sampled one-per-structure at the centre.
+
+**What differs is the reference charge of the energy and force labels.**
+`DFT_E0` / `DFT_F0` are back-extrapolated to q = 0; our `energy` / `forces`
+are at the frame's own charge. `DFT_E0` sits within −0.119 ± 0.375 eV of our
+E extrapolated to q = 0, against +1.893 ± 3.555 eV when compared at the
+frame's own charge.
+
+**What the |q| ≤ 1 cap removes.** Of `razor_centre`'s 5989 structures, 5113
+are in the publication set and 876 are not:
+
+| | n | polarizable | \|q\| > 1.0 | max_force p99 |
+|---|---|---|---|---|
+| in the paper set | 5113 | 99.3% | 0 | 6.04 |
+| excluded | 876 | 36.5% | 665 (76%) | 18.79 |
+
+Capping the charge does most of the `polarizable` filtering for free — the
+excluded set is where dielectric breakdown lives.
+
+`make_zausi_split.py` rebuilds the publication's **selection** with **our
+labels** into `train_zausi.xyz` (4598) and `test_zausi.xyz` (515).
+
+**Do not mix the two splits.** 452 of the publication's 515 test structures
+sit in our `razor_train`, so training on our split and testing on theirs
+would leak. Their split is internally clean (0 shared `struc_pk`), so use it
+end to end.
