@@ -1,0 +1,37 @@
+train: "data/train"
+valid: "data/valid"
+test_datasets:
+  test: ["data/test", true]
+seed: 42
+batcher:
+  batch_size: 16
+  coarse_strategy: powers_of_4
+  size_strategy: powers_of_4
+  fine_strategy: powers_of_4
+# 150 : 1 : 0.15 : 1.0 -> E 20.3% / F 64.7% / W 12.3% / Z 2.7%, reproducing
+# ../razor/'s tuned split of E 20.1 / F 67.8 / W 12.1.
+#
+# NOT razor's raw 100 : 1 : 0.05, which would give E 16.5 / F 78.6 / W 5.0
+# here: capping the charge at |q| <= 1.0 e cuts the work-function variance to
+# 6.36e-1 against razor's 1.69, so the same nominal weight buys less than half
+# the share. Energy and force variances are close to razor's (1.05e-3 vs
+# 1.40e-3, 5.04e-1 vs 4.73e-1), so only the W weight really moves.
+loss_weights: {"energy": 150.0, "forces": 1.0, "work_function": 0.15, "bec_z": 1.0}
+checkpointers: full
+optimizer: muon
+valid_every_epoch: 2
+decay_style: warmup_cosine
+# 26, matched on gradient updates: razor's 10 epochs = 7,290 updates, and at
+# 276 batches/epoch that is 26.4 here.
+warmup_epochs: 26
+start_learning_rate: 2e-4
+gradient_clip: 1.0
+# 4,138 train frames at 15 real structures per batch = 276 batches/epoch, so
+# 800 epochs = 220,800 gradient updates -- within 1% of ../razor/'s l2c8
+# 300-epoch budget (729 x 300 = 218,700). Epochs are not comparable across
+# folders; updates are.
+max_epochs: 800
+benchmark_pipeline: True
+use_wandb: False
+default_matmul_precision: "float32"
+worker_count: 4
