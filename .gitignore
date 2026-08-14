@@ -42,3 +42,9 @@ datasets/natcomm2025/*.zip
 datasets/natcomm2025/*.pb
 datasets/natcomm2025/OH-strus/
 datasets/natcomm2025/*.pdf
+
+# The publication source drop: 850 MB of xyz + json that duplicates data we
+# already have. razor_centre_paper_{train,test}.xyz plus their struc_pk lists
+# are the tracked artefacts, and make_paper_split.py regenerates them from the
+# lists alone once this folder is deleted.
+datasets/razor/Publication_data_for_ploche/

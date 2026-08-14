@@ -76,7 +76,7 @@ work_function = atoms.info["work_function"]  # V, dE/dq target
 struc_pk = atoms.info["struc_pk"]            # split key -- never split within one struc_pk
 ```
 
-## The publication subset (`train_zausi.xyz` / `test_zausi.xyz`)
+## The publication subset (`razor_centre_paper_{train,test}.xyz`)
 
 `Publication_data_for_ploche/{train,test}.xyz` is **`razor_centre` restricted
 to |q| ≤ 1.0 e**, not a separate dataset. Verified rather than assumed:
@@ -107,8 +107,18 @@ are in the publication set and 876 are not:
 Capping the charge does most of the `polarizable` filtering for free — the
 excluded set is where dielectric breakdown lives.
 
-`make_zausi_split.py` rebuilds the publication's **selection** with **our
-labels** into `train_zausi.xyz` (4598) and `test_zausi.xyz` (515).
+`make_paper_split.py` rebuilds the publication's **selection** with **our
+labels** into `razor_centre_paper_train.xyz` (4598) and
+`razor_centre_paper_test.xyz` (515), taking each structure's stencil centre
+straight out of `razor_centre.xyz`.
+
+**It survives deletion of the source folder.** Because every selected frame is
+a stencil centre, the selection is fully determined by `struc_pk` alone — no
+charges need recording — so the script writes
+`razor_centre_paper_{train,test}_struc_pk.txt` (plain text, 4598 and 515 ids)
+and falls back to them when `Publication_data_for_ploche/` is gone. Verified:
+re-running with the folder hidden reproduces both xyz files byte-identically.
+The script asserts every frame really is a centre before relying on that.
 
 **Do not mix the two splits.** 452 of the publication's 515 test structures
 sit in our `razor_train`, so training on our split and testing on theirs
