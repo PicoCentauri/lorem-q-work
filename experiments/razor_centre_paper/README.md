@@ -5,9 +5,9 @@ The publication's subset of razor, with **our** labels. Data is
 
 | dir | model | loss weights | shares |
 |---|---|---|---|
-| `sr-l2c8-800ep/` | d64 l2 c8, `lr: false` | 150 : 1 : 0.15 | E 20.9 / F 66.5 / W 12.6 |
-| `lr-l2c8-800ep/` | same, `lr: true` (`max_degree_lr: 0`) | 150 : 1 : 0.15 | same |
-| `sr-l2c8-bec-800ep/` | same as `sr`, `predict_bec: True` | + `bec_z: 1.0` | E 20.3 / F 64.7 / W 12.3 / **Z 2.7** |
+| `sr-l2c8-800ep/` | d64 l2 c8, `lr: false` | 100 : 1 : 0.05 | E 16.4 / F 78.6 / W 5.0 |
+| `lr-l2c8-800ep/` | same, `lr: true` (`max_degree_lr: 0`) | 100 : 1 : 0.05 | same |
+| `sr-l2c8-bec-800ep/` | same as `sr`, `predict_bec: True` | + `bec_z: 1.0` | E 15.9 / F 76.1 / W 4.8 / **Z 3.2** |
 
 `model.yaml` is byte-identical to `../razor/`'s `l2c8`, and to `../cpmace/`'s
 and `../natcomm2025/`'s, so all four datasets read across at fixed model. The
@@ -45,9 +45,36 @@ appears in two splits.
 **Do not mix this with `../razor/`'s split.** 452 of these 515 test structures
 sit in `razor_train`, so a model trained there and tested here would leak.
 
-## Loss weights
+## Loss weights: 150 : 1 : 0.15 diverged, so these are razor's proven triple
 
-`150 : 1 : 0.15`, not razor's raw `100 : 1 : 0.05`. Variances against razor's:
+The first attempt used `150 : 1 : 0.15`, chosen to reproduce razor's *tuned
+shares* given this subset's smaller work-function variance. **Both runs hit
+`loss became NaN at step=8280`** — about 2 epochs in, at LR 1.6e-05, still
+inside warmup. SLURM reported `COMPLETED` because `lorem-train` catches the
+NaN, cancels and wraps up cleanly, so the failure is invisible from `sacct`.
+
+The data was ruled out first: zero non-finite labels across all 4598 train and
+515 test frames, max|F| 14.33 eV/Å with only 2 frames over 10, `bec_z` bounded
+at 1.07 e. Diverging at a *low* learning rate points at the loss scale rather
+than the step size.
+
+`150 : 1 : 0.15` was the most aggressive weighting used anywhere in this
+project on both axes at once:
+
+| | energy | work function |
+|---|---|---|
+| razor's proven l2c8 | 100 | **0.05** |
+| razor_centre | 0.5 | 0.15 |
+| **first attempt here** | **150** | **0.15** |
+
+`../razor/README.md` warns about the 0.15 specifically: the untrained `dE/dq`
+starts around −2…−18 V against labels of +3…+7, so that term begins at ~99% of
+the loss, and razor's sweep later moved to 0.05 because 0.15 cost 1.9× on
+energy and 1.7× on forces. Pairing it with the largest energy weight used here
+was the mistake.
+
+**Now `100 : 1 : 0.05`** — exactly razor's proven l2c8 triple. Variances for
+reference:
 
 | target | here | razor |
 |---|---|---|
@@ -56,14 +83,13 @@ sit in `razor_train`, so a model trained there and tested here would leak.
 | **work function** | **6.36e−1** | 1.69 |
 | `bec_z` | 2.12e−2 | — |
 
-Energy and forces are close to razor's, so only the work-function weight
-really moves: the |q| ≤ 1 cap cuts W's variance to a third, and razor's
-nominal 0.05 would buy only a 5.0% share instead of 12.1%. These weights
-reproduce razor's tuned split.
-
-`bec_z: 1.0` is deliberately low — a **2.7%** share. It is the same weight
-`../razor_centre/sr-wf-bec/` used, and the dataset README warns `bec_z` is a
-finite-difference estimate damped by ≥15%, so it should not be pushed hard.
+**The cost is real and worth stating:** because the |q| ≤ 1 cap cuts the
+work-function variance to a third of razor's, the same nominal weight buys
+only a **5.0%** share here against razor's 12.1%. So the work function is
+trained more weakly than in any other folder. That is the price of a weighting
+proven to train on this model, and it should be raised once stability is
+confirmed — not before, since the a100 queue is currently ~4 days deep and a
+second divergence is expensive.
 
 ## Budget
 

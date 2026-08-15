@@ -8,15 +8,26 @@ batcher:
   coarse_strategy: powers_of_4
   size_strategy: powers_of_4
   fine_strategy: powers_of_4
-# 150 : 1 : 0.15 -> E 20.9% / F 66.5% / W 12.6%, reproducing
-# ../razor/'s tuned split of E 20.1 / F 67.8 / W 12.1.
+# 100 : 1 : 0.05 -- razor's proven triple, not the 150 : 1 : 0.15 this
+# folder first used. That diverged: both runs hit "loss became NaN at
+# step=8280" at LR 1.6e-05, still inside warmup. Diverging at a *low* learning
+# rate points at the loss scale rather than the step size, and the data was
+# ruled out first -- zero non-finite labels, max|F| 14.33 eV/A with 2 frames
+# over 10, bec_z bounded at 1.07 e.
 #
-# NOT razor's raw 100 : 1 : 0.05, which would give E 16.5 / F 78.6 / W 5.0
-# here: capping the charge at |q| <= 1.0 e cuts the work-function variance to
-# 6.36e-1 against razor's 1.69, so the same nominal weight buys less than half
-# the share. Energy and force variances are close to razor's (1.05e-3 vs
-# 1.40e-3, 5.04e-1 vs 4.73e-1), so only the W weight really moves.
-loss_weights: {"energy": 150.0, "forces": 1.0, "work_function": 0.15}
+# 150 : 1 : 0.15 was the most aggressive weighting used anywhere here on both
+# axes at once. ../razor/README.md warns about the 0.15 specifically: the
+# untrained dE/dq starts around -2..-18 V against labels of +3..+7, so that
+# term begins at ~99% of the loss, and razor's sweep moved to 0.05 because
+# 0.15 cost 1.9x on energy and 1.7x on forces. Pairing it with the largest
+# energy weight used in this project was the mistake.
+#
+# The cost of the safe choice: shares are E 16.4 / F 78.6 / W 5.0, so the
+# work function gets ~5% rather than the 12.1% razor's tuned split gives. That
+# is the price of a weighting proven to train on this model. Raise W once this
+# is known to be stable -- with the a100 queue ~4 days deep, a second
+# divergence is expensive.
+loss_weights: {"energy": 100.0, "forces": 1.0, "work_function": 0.05}
 checkpointers: full
 optimizer: muon
 valid_every_epoch: 2
