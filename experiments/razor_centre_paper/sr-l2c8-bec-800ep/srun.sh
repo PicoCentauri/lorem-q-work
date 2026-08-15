@@ -31,5 +31,12 @@ source ~/venv/lorem-wf/bin/activate
 
 export PYTHONUNBUFFERED=1
 
+# XLA's Triton GEMM autotuner cannot identify the GPU on this jaxlib build
+# ("DEVICE_TYPE_INVALID ... No configs could be compiled") and aborts. It is
+# reached by LoremQ._bec_z's jvp-over-grad, which killed sr-l2c8-bec-800ep
+# outright; the same flag is already in every evaluate srun.sh here. Harmless
+# for the runs that do not need it, so all three carry it.
+export XLA_FLAGS="--xla_gpu_enable_triton_gemm=false"
+
 export DATASETS=..
 lorem-train

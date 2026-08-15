@@ -45,36 +45,39 @@ appears in two splits.
 **Do not mix this with `../razor/`'s split.** 452 of these 515 test structures
 sit in `razor_train`, so a model trained there and tested here would leak.
 
-## Loss weights: 150 : 1 : 0.15 diverged, so these are razor's proven triple
+## The first two attempts died of a missing rename, not the loss weights
 
-The first attempt used `150 : 1 : 0.15`, chosen to reproduce razor's *tuned
-shares* given this subset's smaller work-function variance. **Both runs hit
-`loss became NaN at step=8280`** — about 2 epochs in, at LR 1.6e-05, still
-inside warmup. SLURM reported `COMPLETED` because `lorem-train` catches the
-NaN, cancels and wraps up cleanly, so the failure is invisible from `sacct`.
+Both the first attempt (`150 : 1 : 0.15`) and the second (`100 : 1 : 0.05`)
+hit **`loss became NaN at step=8280`** — the *same step* under very different
+weightings, which should have been the tell straight away. SLURM reported
+`COMPLETED` in both cases, because `lorem-train` traps the NaN, cancels and
+wraps up cleanly; **the failure is invisible from `sacct`**.
 
-The data was ruled out first: zero non-finite labels across all 4598 train and
-515 test frames, max|F| 14.33 eV/Å with only 2 frames over 10, `bec_z` bounded
-at 1.07 e. Diverging at a *low* learning rate points at the loss scale rather
-than the step size.
+The cause: `prepare.py` did not rename `bias_charge` -> `total_charge`.
+marathon writes **NaN** for any declared `atoms.info` key that is absent, and
+`total_charge` is a model *input*, so the charge conditioning was fed NaN from
+step 0. Scanning the prepared payload found exactly **4138 non-finite values,
+one per training frame**, at a fixed offset in each record.
 
-`150 : 1 : 0.15` was the most aggressive weighting used anywhere in this
-project on both axes at once:
+Both `../razor/prepare.py` and `../razor_centre/prepare.py` do this rename;
+this one was written fresh and omitted it. It is now done in `rename_charge()`
+with a comment explaining why it is not cosmetic.
 
-| | energy | work function |
-|---|---|---|
-| razor's proven l2c8 | 100 | **0.05** |
-| razor_centre | 0.5 | 0.15 |
-| **first attempt here** | **150** | **0.15** |
+**Two lessons worth keeping.** Checking the *xyz labels* for non-finite values
+proved nothing — the field that was NaN is one the xyz never had, created by
+`prepare.py`. Check the prepared payload:
 
-`../razor/README.md` warns about the 0.15 specifically: the untrained `dE/dq`
-starts around −2…−18 V against labels of +3…+7, so that term begins at ~99% of
-the loss, and razor's sweep later moved to 0.05 because 0.15 cost 1.9× on
-energy and 1.7× on forces. Pairing it with the largest energy weight used here
-was the mistake.
+```python
+d = np.fromfile("data/train/mmap/data.ninja", dtype=np.float64)
+assert np.isfinite(d).all()
+```
 
-**Now `100 : 1 : 0.05`** — exactly razor's proven l2c8 triple. Variances for
-reference:
+And a NaN at an identical step under different hyperparameters is a
+determinism signature: it points at data, not at optimisation.
+
+### Loss weights
+
+`100 : 1 : 0.05`, razor's proven l2c8 triple. Variances:
 
 | target | here | razor |
 |---|---|---|
@@ -83,13 +86,20 @@ reference:
 | **work function** | **6.36e−1** | 1.69 |
 | `bec_z` | 2.12e−2 | — |
 
-**The cost is real and worth stating:** because the |q| ≤ 1 cap cuts the
-work-function variance to a third of razor's, the same nominal weight buys
-only a **5.0%** share here against razor's 12.1%. So the work function is
-trained more weakly than in any other folder. That is the price of a weighting
-proven to train on this model, and it should be raised once stability is
-confirmed — not before, since the a100 queue is currently ~4 days deep and a
-second divergence is expensive.
+Because the |q| ≤ 1 cap cuts the work-function variance to a third of razor's,
+0.05 buys only a **5.0%** share here against razor's 12.1%. `150 : 1 : 0.15`
+would reproduce razor's tuned shares and is **not** known to be unstable —
+that divergence was the missing rename. Raising the work-function weight is a
+reasonable follow-up now that the real cause is fixed.
+
+### The Triton autotuner flag
+
+`sr-l2c8-bec-800ep` additionally died with
+`RET_CHECK ... DEVICE_TYPE_INVALID ... No configs could be compiled`, XLA's
+Triton GEMM autotuner failing to identify the GPU. It is reached through
+`LoremQ._bec_z`'s jvp-over-grad. No *training* `srun.sh` in this repo carried
+`XLA_FLAGS=--xla_gpu_enable_triton_gemm=false` — only the evaluate scripts —
+which is why it had not bitten before. All three scripts here now set it.
 
 ## Budget
 

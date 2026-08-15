@@ -39,9 +39,23 @@ VALID_FRACTION = 0.10
 BATCH_SIZE = 16
 
 
+def rename_charge(atoms):
+    """`bias_charge` -> `total_charge`, the name the model reads.
+
+    Not cosmetic. marathon writes NaN for any declared atoms.info key that is
+    absent, and total_charge is a model *input*, so omitting this rename feeds
+    the charge conditioning NaN from step 0 and the loss is NaN forever. That
+    is exactly what happened on the first attempt here: both runs died at
+    "loss became NaN at step=8280" and it was misdiagnosed as a loss-weight
+    problem. ../razor/prepare.py and ../razor_centre/prepare.py both do this.
+    """
+    atoms.info["total_charge"] = float(atoms.info.pop("bias_charge"))
+    return atoms
+
+
 def main():
-    train_all = read(f"{DATA}/razor_centre_paper_train.xyz", index=":")
-    test = read(f"{DATA}/razor_centre_paper_test.xyz", index=":")
+    train_all = [rename_charge(a) for a in read(f"{DATA}/razor_centre_paper_train.xyz", index=":")]
+    test = [rename_charge(a) for a in read(f"{DATA}/razor_centre_paper_test.xyz", index=":")]
 
     rng = np.random.default_rng(SEED)
     order = rng.permutation(len(train_all))
@@ -67,7 +81,7 @@ def main():
         f"variances  E/atom {np.var(e):.4e}  F {np.var(f):.4e}  "
         f"W {np.var(w):.4e}  bec_z {np.var(b):.4e}"
     )
-    q = np.array([a.info["bias_charge"] for a in train])
+    q = np.array([a.info["total_charge"] for a in train])
     pol = np.array([bool(a.info["polarizable"]) for a in train])
     comms.talk(f"q {q.min():+.2f}..{q.max():+.2f}   polarizable {100*pol.mean():.1f}%")
 
