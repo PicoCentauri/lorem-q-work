@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=cpmace-grace-w1000-16-1-fp32
+#SBATCH --job-name=cpmace-grace-w500-16-1-huber
 #SBATCH --output=slurm.out
 #SBATCH --nodes 1
 #SBATCH --ntasks 1

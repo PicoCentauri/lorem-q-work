@@ -33,24 +33,42 @@ potential:
     charge_normalize: none
 
 fit:
-  # CHANGED from the first run (was 16 : 32 : 10). Those gracemaker defaults
-  # left the energy holding 0.10% of the loss -- effectively untrained, the
-  # same failure ../../cpmace/ diagnosed for cp-MACE's own 1:100:10 weights.
+  # CHANGED from the first run (was 16 : 32 : 10, square). Those gracemaker
+  # defaults left the energy holding 0.10% of the loss -- effectively
+  # untrained, the same failure ../../cpmace/ diagnosed for cp-MACE's own
+  # 1:100:10 weights.
   #
-  # Decomposing run 1's loss (reconstructs the logged total to 0.6%) gives, at
-  # its converged errors:
-  #     1000 : 16 : 1  ->  E 15.1% / F 73.9% / W 11.0%
-  # against razor's tuned triple of 16.4 / 78.6 / 5.0, so this holds razor's
-  # energy share while roughly doubling the work-function share.
+  # `huber` is gracemaker's own default loss type (wizard.py:271) and the
+  # weights are derived FOR it. That derivation is not optional: huber does not
+  # scale the three targets equally, because delta=0.01 sits above the energy's
+  # error scale (~1.2e-3, so entirely quadratic, huber = square/2 exactly) but
+  # below the force and work-function scales (~2.1e-2 and ~3.3e-2, mostly
+  # linear, shrunk 4-5x). Mean loss per unit weight, huber/square:
+  #     energy 0.500   forces 0.241   work function 0.198
+  # So huber shrinks the noisy targets far more than the clean one, and keeping
+  # the square-derived weights would silently near-double the energy share:
+  #     1000 : 16 : 1  square -> E 15.5% / F 73.4% / W 11.1%
+  #     1000 : 16 : 1  huber  -> E 28.1% / F 64.0% / W  7.9%
+  #
+  # At delta 0.01 these give E 16.3% / F 74.5% / W 9.2%, against razor's tuned
+  # triple of 16.4 / 78.6 / 5.0 -- razor's energy share with roughly double the
+  # work-function share.
+  #
+  # The weights are delta-dependent (holding shares fixed, the energy weight
+  # runs 271 -> 466 -> 707 as delta goes 0.005 -> 0.01 -> 0.02), so the two must
+  # be quoted and changed together.
   #
   # NOTE this is one iteration of a fixed point: raising the energy weight
   # lowers the energy error, which lowers its realised share. Expect the
-  # retrained model to land somewhat under 15%.
+  # retrained model to land somewhat under 16%.
   loss:
-    energy: { weight: 1000, type: square }
-    forces: { weight: 16, type: square }
+    energy: { weight: 500, type: huber, delta: 0.01 }
+    forces: { weight: 16, type: huber, delta: 0.01 }
     extra_components:
-      WeightedSSEWorkFunctionLoss: { weight: 1, type: square }
+      # delta given explicitly: the wizard only applies its delta to energy and
+      # forces, and WeightedSSEWorkFunctionLoss defaults to 0.1, which for
+      # ~0.033 V errors would be fully quadratic -- huber in name only.
+      WeightedSSEWorkFunctionLoss: { weight: 1, type: huber, delta: 0.01 }
 
   train_function: ComputeBatchEnergyForcesCharge
   compute_function: ComputeStructureEnergyForcesVirialCharge
