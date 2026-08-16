@@ -136,6 +136,50 @@ def load_frames(name, polarizable_only, n=None):
     valid_groups = set(uniq[order[: int(round(VALID_FRACTION * len(uniq)))]].tolist())
     frames = [a for a in frames if a.info["group"] in valid_groups]
 
+    # Born effective charges by finite difference. Z* = (A eps0) dF/dq at fixed
+    # geometry, which is exactly what a group provides: 4-18 charge states with
+    # identical positions. F(q) is linear to ~4 meV/A against a 602 meV/A force
+    # scale, so a linear fit per atom per component is enough, and the
+    # derivative belongs to the geometry -- every frame in the group gets it,
+    # not just a central one.
+    #
+    # This is ONE COLUMN of the 3x3 tensor Z*_{i,alpha,beta}, not three
+    # independent quantities: charging a slab makes a field along the normal
+    # only (x here), so beta = x throughout. The column still has three
+    # components, and the two transverse ones are real off-diagonal elements
+    # rather than zeros -- liquid water has no symmetry forcing Z*_yx or Z*_zx
+    # to vanish. Measured: Z*_xx std 0.239 against 0.054 and 0.057 for the
+    # transverse pair, which is the expected 4-5x hierarchy and a useful check.
+    # The other two columns (beta = y, z) are not obtainable from this data;
+    # they would need an in-plane field.
+    #
+    # The model's bec_of_batch returns -(A eps0) d2E/drdq, also (natoms, 3) and
+    # also the beta = normal column, so the comparison is like for like.
+    #
+    # Sign matches the model: bec_of_batch returns -(A eps0) d2E/drdq, and
+    # F = -dE/dr, so both are +(A eps0) dF/dq.
+    from collections import defaultdict
+
+    by_group = defaultdict(list)
+    for a in frames:
+        by_group[a.info["group"]].append(a)
+    n_bec = 0
+    for grp in by_group.values():
+        q = np.array([a.info["total_charge"] for a in grp])
+        if len(q) < 3 or np.ptp(q) < 0.05:
+            continue
+        F = np.stack([a.get_forces() for a in grp])          # (nq, natoms, 3)
+        cell = grp[0].get_cell()[:]
+        area = np.linalg.norm(np.cross(cell[1], cell[2]))    # slab normal is x
+        slope = np.polyfit(q, F.reshape(len(q), -1), 1)[0]
+        z = (area * EPSILON_0) * slope.reshape(-1, 3)
+        for a in grp:
+            a.arrays["bec_z"] = z
+            n_bec += 1
+    if n_bec:
+        print(f"  {name}: derived bec_z for {n_bec}/{len(frames)} frames "
+              f"from {len(by_group)} geometry stencils", flush=True)
+
     kept, dropped = [], []
     for atoms in frames:
         atoms.info["polarizable"] = True
@@ -661,8 +705,20 @@ def plot_split(all_rows, split, name):
         ]
         if not vals:
             continue
-        lo = min(float(np.min(a)) for a in vals)
-        hi = max(float(np.max(a)) for a in vals)
+        # The axis is anchored on the LABELS, not on the predictions. A model
+        # that predicts badly -- natcomm2025's bec_z, where RMSE exceeds the
+        # label spread -- otherwise drags the range out to its worst outlier and
+        # squashes every real point into a dot at the origin. Predictions widen
+        # the window only via their 1-99 percentile, so a few wild values clip
+        # instead of rescaling the plot; the RMSE annotation still reports the
+        # true error, so nothing is hidden by the clipping.
+        refs = [d[f"{key}_ref"] for d in per_variant.values() if f"{key}_ref" in d]
+        preds = [d[f"{key}_pred"] for d in per_variant.values() if f"{key}_pred" in d]
+        lo = min(float(np.min(a)) for a in refs)
+        hi = max(float(np.max(a)) for a in refs)
+        if preds:
+            lo = min(lo, min(float(np.percentile(a, 1)) for a in preds))
+            hi = max(hi, max(float(np.percentile(a, 99)) for a in preds))
         pad = 0.05 * (hi - lo) if hi > lo else 1.0
         col_lims[key] = (lo - pad, hi + pad)
 

@@ -186,8 +186,8 @@ adding force-only structures.
 
 ## Results
 
-All three ran the full 1000 epochs. Converged **validation** RMSE (last
-validation block), on the 109-frame held-out split:
+Four runs. Converged **validation** RMSE (last validation block), on the
+109-frame held-out split:
 
 | run | weights | E share | E (meV/atom) | F (meV/Å) | Φ (V) | wall |
 |---|---|---|---|---|---|---|
@@ -196,6 +196,32 @@ validation block), on the 109-frame held-out split:
 | `sr-...-cpmace-weights-` | 1:100:10 | 0.0001% | 1.609 | 62.66 | 0.0595 | 3h45m |
 
 R²: 99.47/99.77/89.65, 99.42/99.77/91.78, 96.21/99.45/79.38.
+
+### The GRACE-shaped model is the best force model here
+
+`sr-grace-like-d128-l3-c32-1000ep/` — d128 l3 c32, `num_message_passing: 2`,
+1.29 M parameters, 7h39m — mapped from grace-tensorpotential's `GRACE_2LAYER`
+preset. Same `settings.yaml` as the control, so the model is the only variable.
+
+| run | E | F | Φ | wall |
+|---|---|---|---|---|
+| `sr` d64 l2 c8 | 0.600 | 40.70 | 0.0421 | 3h47m |
+| `lr` d64 l2 c8 | 0.631 | 40.24 | **0.0376** | 4h34m |
+| `sr` 1:100:10 | 1.609 | 62.66 | 0.0595 | 3h45m |
+| **`sr` GRACE-like** | **0.561** | **29.33** | 0.0414 | 7h39m |
+
+**Forces 28% better than the control**, and the best energy. For contrast,
+`../razor/`'s whole size sweep bought only 15% from a 4× parameter increase —
+so *how* the budget is spent matters more than how much of it there is.
+Normalised: every previous LOREM config sat at **3.9–4.8% of the force std**;
+this one is at **3.47%**, against cp-MACE's 1.95%. The gap to cp-MACE narrows
+from 2.4× to **1.8×** — progress, not closure.
+
+**Capacity does not help the charge response.** Φ is 0.0414, no better than
+the control's 0.0421 and worse than `lr`'s 0.0376. Consistent with everything
+else here: **the Ewald head moves the charge response, capacity moves the
+forces.** The two levers are on different axes and have never been combined —
+an `lr` GRACE-like run is the obvious next experiment.
 
 ### `evaluate.py` scores a different model than the last epoch
 
@@ -211,9 +237,11 @@ not the table above:
 | | evaluated checkpoint | 0.62 | 41.58 | 0.0373 |
 | cp-MACE weights | last epoch | 1.609 | 62.66 | 0.0595 |
 | | evaluated checkpoint | 1.62 | 62.69 | 0.0581 |
+| GRACE-like | last epoch | 0.561 | **29.33** | 0.0414 |
+| | evaluated checkpoint | 0.69 | **35.53** | 0.0404 |
 
 `lr` and the cp-MACE-weights run barely move, but **`sr`'s checkpoint is 23%
-worse on forces and better on Φ than its final epoch** — it was selected from
+worse on forces (and the GRACE-like one 21% worse) than its final epoch** — it was selected from
 an earlier epoch, around 550-600 judging by the force curve. That is early
 stopping working as intended on a model that overfits (see below), but it has
 a consequence for reading the comparison:

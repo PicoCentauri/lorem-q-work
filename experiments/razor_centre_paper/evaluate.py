@@ -1,18 +1,30 @@
-"""Parity plots + RMSE for the cpmace sr/lr pair.
+"""Parity plots + RMSE for the razor `sr`/`lr`/`sr-wf` variants.
 
-Three quantities per variant on the validation split:
+Three quantities per variant, on both the validation split and the
+wide-charge-range test sweep:
 
-- energy (meV/atom), on the *total* energy -- the raw `energy` field is the
-  grand potential and is converted here exactly as in prepare.py. See
-  datasets/cpmace/README.md.
-- forces (meV/A, all Cartesian components)
-- work function (V) -- the model's autograd dE/dq against -potential.
+- energy (eV/atom)
+- forces (eV/A, all Cartesian components)
+- work function (V) -- the model's autograd `dE/dq`, i.e. backprop through
+  the forward pass with respect to the `total_charge` input, against the
+  DFT `work_function` label. For `sr`/`lr` nothing trains on it, so it is a
+  pure "did charge conditioning learn the right charge derivative?" probe;
+  for `sr-wf` it is a fitted target and this panel is a training diagnostic
+  instead. The per-species energy baseline is charge-independent and
+  therefore drops out of `dE/dq` entirely -- no offset correction needed
+  there, unlike for the energy parity.
 
-Derived from ../razor/evaluate.py, with razor-only machinery removed: cpmace
-has no polarizable flag (all frames are treated as one subset), no bec_z
-labels, and no charge-sweep test set.
+The `dE/dq` here is computed by this script's own `jax.grad`, so it works
+against checkpoints from either lorem version -- it does not depend on
+`Lorem.predict` exposing `work_function`.
 
-Run from experiments/cpmace/ once both variants have trained:
+Reads the raw extxyz rather than `data/`, so it also gets `polarizable`
+and `q_MD` for the split-out plots. Loads each trained checkpoint directly
+(model + params + per-species baseline) instead of going through the
+per-structure ASE Calculator, which triggers a fresh XLA compile per
+distinct padded shape.
+
+Run from experiments/razor/ once both variants have trained:
 
     DATASETS=. python evaluate.py
 """
@@ -42,12 +54,11 @@ from marathon.io import from_dict, read_msgpack, read_yaml
 # vacuum permittivity in e^2 / (eV * Angstrom)
 EPSILON_0 = 0.005526349406
 
-DATA = "../../datasets/cpmace"
+DATA = "../../datasets/razor"
 
-# Standard VASP PAW valence sum for C70 H89 N Ni O46. Must match
-# prepare.py -- see datasets/cpmace/README.md, where it is confirmed against
-# the thermodynamics rather than assumed.
-NOMINAL_ELECTRONS = 660.0
+# must match prepare.py -- the validation carve-out is reconstructed, not stored
+SPLIT_SEED = 0
+VALID_FRACTION = 0.10
 # The model-size / training-length / range comparison, all at loss weights
 # 100:1:0.05 with settings.yaml differing only in max_epochs -- so the only
 # things varying across these six are the architecture, the schedule length
@@ -56,20 +67,18 @@ NOMINAL_ELECTRONS = 660.0
 # a question that is already settled, and mixing them in would put four
 # different loss weights in one figure.
 VARIANTS = [
-    "sr-small-l2c8-1000ep",
-    "lr-small-l2c8-1000ep",
-    "sr-small-l2c8-cpmace-weights-1000ep",
-    "sr-grace-like-d128-l3-c32-1000ep",
+    "sr-l2c8-800ep",
+    "lr-l2c8-800ep",
+    "sr-l2c8-bec-800ep",
 ]
 
 # Row labels for the figure: the directory names encode the loss weights,
 # which are constant here, so they are all prefix and no signal. Name the
 # axis that actually varies instead.
 LABELS = {
-    "sr-small-l2c8-1000ep": "d64 l2 c8 sr\n1000 ep",
-    "lr-small-l2c8-1000ep": "d64 l2 c8 LR\n1000 ep",
-    "sr-small-l2c8-cpmace-weights-1000ep": "d64 l2 c8 sr\n1:100:10",
-    "sr-grace-like-d128-l3-c32-1000ep": "d128 l3 c32 sr\nGRACE-like",
+    "sr-l2c8-800ep": "d64 l2 c8 sr\n800 ep",
+    "lr-l2c8-800ep": "d64 l2 c8 LR\n800 ep",
+    "sr-l2c8-bec-800ep": "d64 l2 c8 sr\n+bec",
 }
 # the summed-R2 checkpoint is named after the targets it covers -- "R2_E+F"
 # for energy+forces, "R2_E+F+W" once the work function is trained on,
@@ -77,19 +86,22 @@ LABELS = {
 # instead of hardcoding one name, which only ever matched the E+F runs.
 CHECKPOINT_GLOB = "R2_*"
 
-# One split. cpmace ships a single file of 1093 frames; the 90/10 train/valid
-# split is all the held-out data there is, so nothing here pretends to be a
-# test set. The third element is the polarizable-only flag razor needs; cpmace
-# has no such flag, so it is always False and every plot is single-coloured.
+# (split name, xyz file, polarizable-only). "valid" mirrors what the model
+# actually trained on; "test_sweep" is the full 13-point q in [-1.5, 1.5]
+# sweep, only 13% of which is polarizable -- the extrapolation case, kept
+# unfiltered on purpose (see prepare.py).
+# "test" is the publication's own 515-frame test set, untouched -- the number
+# that is comparable to their paper. "valid" is the 10% carve-out of their
+# train, reconstructed here with prepare.py's seed and logic.
 SPLITS = [
-    ("valid", "cpmace_val", False),
+    ("valid", "razor_centre_paper_train", False),
+    ("test", "razor_centre_paper_test", False),
 ]
 
 COLORS = {
-    "sr-small-l2c8-1000ep": "steelblue",
-    "lr-small-l2c8-1000ep": "crimson",
-    "sr-small-l2c8-cpmace-weights-1000ep": "goldenrod",
-    "sr-grace-like-d128-l3-c32-1000ep": "seagreen",
+    "sr-l2c8-800ep": "steelblue",
+    "lr-l2c8-800ep": "crimson",
+    "sr-l2c8-bec-800ep": "seagreen",
 }
 POLARIZABLE_COLORS = {True: "steelblue", False: "darkorange"}
 
@@ -110,48 +122,43 @@ ROWS_CACHE = Path("evaluate_rows.json")
 
 
 # Drop configurations whose DFT max force exceeds this, in eV/A. Not a
-# cosmetic choice in general -- in ../razor/ one frame at 12.66 eV/A carried
-# 10% of the force RMSE. Here it is a genuine no-op: cpmace's largest force is
-# 5.65 eV/A, so nothing is dropped. Kept so the two folders screen identically
-# and the number stays honest if the dataset is ever extended.
+# cosmetic choice: a single razor_val frame (struc_pk 301216, q = -1.25,
+# max_force 12.66) was the worst frame for every variant by an order of
+# magnitude -- 481 meV/A against 41 for the next worst in its charge bin --
+# and on its own inflated the pooled validation force RMSE from 27.97 to
+# 31.17 meV/A. The >20 eV/A rule the READMEs measured earlier is too loose to
+# catch it. Applied to the evaluation splits only; training data is untouched,
+# so this changes what is reported, not what was learned.
 MAX_FORCE_CUTOFF = 10.0
 
 
 def load_frames(name, polarizable_only, n=None):
-    """Raw cpmace fields -> the (E, q, dE/dq) convention the model was trained
-    on. Must match experiments/cpmace/prepare.py exactly; see
-    datasets/cpmace/README.md for why `energy` needs converting at all.
+    """Read a publication-subset file; for `valid`, reconstruct prepare.py's carve-out.
 
-    `polarizable_only` is ignored -- cpmace has no such flag. Every frame is
-    marked polarizable=True so the polarizable/non-polarizable machinery
-    inherited from razor collapses to a single subset rather than being
-    special-cased throughout.
+    `bias_charge` -> `total_charge` mirrors prepare.py. Nothing here needs the
+    polarizable split (99.3% of this subset is polarizable, because the |q| <= 1
+    cap already removes almost all of the rest), so every frame is marked True
+    and the inherited machinery collapses to one subset.
     """
-    from ase.calculators.singlepoint import SinglePointCalculator
-
     frames = read(f"{DATA}/{name}.xyz", index=":")
-    kept = []
-    dropped = []
+    for a in frames:
+        if "bias_charge" in a.info:
+            a.info["total_charge"] = float(a.info.pop("bias_charge"))
+
+    if name.endswith("_train"):
+        rng = np.random.default_rng(SPLIT_SEED)
+        order = rng.permutation(len(frames))
+        keep = set(order[: int(round(VALID_FRACTION * len(frames)))].tolist())
+        frames = [a for i, a in enumerate(frames) if i in keep]
+
+    kept, dropped = [], []
     for atoms in frames:
-        n_excess = float(atoms.info["electron"]) - NOMINAL_ELECTRONS
-        mu = float(atoms.info["potential"])
-        forces = atoms.get_forces()
-        total_energy = atoms.get_potential_energy() + mu * n_excess
-        atoms.calc = SinglePointCalculator(atoms, energy=total_energy, forces=forces)
-        atoms.info["total_charge"] = -n_excess
-        atoms.info["work_function"] = -mu
         atoms.info["polarizable"] = True
-        # cpmace carries no max_force label, unlike razor -- compute it from
-        # the forces so the same screen can be applied and reported on
-        mf = float(np.abs(forces).max())
-        atoms.info["max_force"] = mf
+        mf = float(atoms.info.get("max_force", np.abs(atoms.get_forces()).max()))
         (dropped if mf > MAX_FORCE_CUTOFF else kept).append(atoms)
     if dropped:
-        print(
-            f"  {name}: dropped {len(dropped)}/{len(frames)} frames over "
-            f"{MAX_FORCE_CUTOFF} eV/A",
-            flush=True,
-        )
+        print(f"  {name}: dropped {len(dropped)}/{len(frames)} frames over "
+              f"{MAX_FORCE_CUTOFF} eV/A", flush=True)
     frames = kept
     if n:
         frames = frames[:n]
@@ -291,6 +298,7 @@ def evaluate_variant(model, params, species_weights, frames):
             rows.append(
                 {
                     "total_charge": float(atoms.info["total_charge"]),
+                    "q_MD": float(atoms.info["q_MD"]),
                     "polarizable": bool(atoms.info["polarizable"]),
                     "e_pred": e_pred_i,
                     "e_ref": e_ref_i,
@@ -300,8 +308,8 @@ def evaluate_variant(model, params, species_weights, frames):
                     "wf_ref": float(atoms.info["work_function"]),
                 }
             )
-            # cpmace ships no bec_z labels, so this never fires. Left in place
-            # so the script stays a drop-in sibling of ../razor/evaluate.py.
+            # razor_val.xyz carries no bec_z; razor_test.xyz does. Only score
+            # it where there is a label.
             if "bec_z" in atoms.arrays:
                 rows[-1]["bec_pred"] = (
                     bec_pred[atom_to_structure == local_i].ravel().tolist()
@@ -372,6 +380,7 @@ def print_table(all_rows):
         f"{'WF RMSE':>10}{'WF MAE':>10}{'Z RMSE':>10}{'Z MAE':>10}{'n':>8}"
     )
     print("\nE in meV/atom, F in meV/A, WF (dE/dq) in V, Z (bec_z) in e")
+    print("Z is blank where the split's xyz carries no bec_z label (razor_val).")
     print(header)
     print("-" * len(header))
     for split, _, _ in SPLITS:
@@ -470,11 +479,11 @@ def _parity(
 
 # -- RMSE resolved by charge --
 
-# cpmace's charges are continuous (1036 distinct values over q in
-# [-2.31, -1.26], a span of ~1.05 e) because the electron count is a
-# constant-potential DFT output rather than a set point. The validation split
-# is only 109 frames, so 0.25 e bins give ~4 bins of ~27 frames -- coarse, but
-# above MIN_BIN_N. Finer bins would fall below it and be hatched out.
+# The dataset's charges sit on a 0.05 e grid, not 0.25, because the stencil is
+# q_MD +- 0.25 about a continuously-varying q_MD -- razor_val has 52 distinct
+# polarizable charges over [-1.75, 1.75], so a bar per exact value would be
+# ~23 frames each and very ragged. 0.25 is the coarsest binning that still
+# resolves the stencil spacing, and puts 11 of 15 bins above MIN_BIN_N.
 CHARGE_BIN_WIDTH = 0.25
 
 # Below this many structures a per-bin RMSE is too noisy to read. Bins under
@@ -612,7 +621,7 @@ def plot_rmse_vs_charge(all_rows, split, name):
             axes[row][col].set_ylim(0, col_max[col])
 
     hatched = "hatched bars: n < %d structures in that bin" % MIN_BIN_N
-    fig.suptitle(f"cpmace -- {split} -- RMSE vs charge ({hatched})")
+    fig.suptitle(f"razor_centre_paper -- {split} -- RMSE vs charge ({hatched})")
     Path("figures").mkdir(exist_ok=True)
     fig.savefig(Path("figures") / name, transparent=True, bbox_inches="tight")
     plt.close(fig)
@@ -624,7 +633,7 @@ def plot_rmse_vs_charge(all_rows, split, name):
 # labels are trustworthy. They dominate every pooled number and stretch every
 # axis, so the figures show the polarizable subset only. The printed table
 # still reports all three subsets -- nothing is discarded, only not plotted.
-PLOT_POLARIZABLE_ONLY = set()
+PLOT_POLARIZABLE_ONLY = {"test_sweep"}
 
 
 def _split_rows(all_rows, split):
@@ -716,7 +725,7 @@ def plot_split(all_rows, split, name):
             linespacing=1.4,
         )
 
-    fig.suptitle(f"cpmace -- {split}")
+    fig.suptitle(f"razor_centre_paper -- {split}")
     Path("figures").mkdir(exist_ok=True)
     fig.savefig(Path("figures") / name, transparent=True, bbox_inches="tight")
     plt.close(fig)

@@ -101,6 +101,62 @@ The runs use **`1000 : 1 : 0.01`** → E 6.8% / F 81.3% / W 11.9%, essentially
 `../cpmace/`'s shares rather than razor's heavier energy term. Whether razor's
 20% energy share would do better here is untested.
 
+## Results
+
+Both runs completed 100 epochs (15h16m / 11h53m). Converged **validation**
+RMSE, last block:
+
+| run | E (meV/atom) | F (meV/Å) | Φ (V) |
+|---|---|---|---|
+| `sr-l2c8-100ep` | 0.249 | 26.73 | 0.0912 |
+| **`lr-l2c8-100ep`** | **0.155** | **23.85** | **0.0705** |
+
+`evaluate.py` on the checkpointed models, 1714 validation frames:
+
+| run | E | F | Φ | **Z\*** |
+|---|---|---|---|---|
+| `sr` | 0.25 | 26.73 | 0.0912 | 0.2757 |
+| `lr` | **0.15** | **23.88** | **0.0699** | 0.2954 |
+
+**The Ewald head wins on every target** — energy 38%, forces 11%, work
+function 23%. That now holds on razor, razor_centre, cpmace and here.
+
+Wall times are **not** comparable: both jobs landed on node a0933 and shared
+its CPU and I/O, which is why `lr` came out *faster* than `sr`, backwards from
+every other folder.
+
+### The Born effective charges are bad, and that is the interesting result
+
+`evaluate.py` derives `bec_z` by finite difference — Z\* = (A ε₀) dF/dq at
+fixed geometry, which the validation split supports because it holds complete
+charge stencils (275 geometries, `bec_z` derived for **1714/1714** frames).
+F(q) is linear to ~4 meV/Å against a 602 meV/Å force scale, so the reference
+is sound.
+
+Against a label std of ~0.145 e:
+
+| | Z\* RMSE | vs label std |
+|---|---|---|
+| `sr` | 0.2757 | **1.9×** |
+| `lr` | 0.2954 | **2.0×** |
+
+**Both are worse than predicting the mean.** Neither run supervises `bec_z`
+here, so this is an unsupervised probe — but `../razor/`'s *unsupervised* `sr`
+reached 0.0399 on the same kind of quantity, and `../razor_centre_paper/`'s
+supervised run reaches 0.0192. So this is not simply "unsupervised is hard".
+
+And `lr` is *worse* than `sr` on it, inverting the pattern it wins on
+everywhere else. Unexplained. The most likely candidates are the 3D Ewald path
+(this and cpmace are `pbc = T T T`, unlike razor's slab) and the compensating
+plate making dF/dq an artefact of the supercell rather than a local property —
+but neither is tested.
+
+**One caveat on Z\***: it is one *column* of the 3×3 tensor, not the whole
+thing. Charging a slab makes a field along the normal only, so `dF/dq` gives
+Z\*_{i,α,x} for α ∈ {x,y,z}. The transverse entries are real off-diagonal
+elements (std 0.054, 0.057 against Z\*_xx's 0.239), not zeros; the other two
+columns need an in-plane field and are unobtainable here.
+
 ## Notes for when training starts
 
 - **The energy baseline is load-bearing.** Raw energies are ~−347,303 eV where
@@ -126,4 +182,5 @@ The runs use **`1000 : 1 : 0.01`** → E 6.8% / F 81.3% / W 11.9%, essentially
 - `prepare.py` — group-wise split and `data/{train,valid}`. Already run.
 - `evaluate.py` — parity and RMSE-vs-charge on `valid`; derived from
   `../cpmace/evaluate.py`. Charge bins are 0.1 e (q spans only 1.2 e here
-  against razor's 3.5). `VARIANTS` is empty pending a model choice.
+  against razor's 3.5). It also derives `bec_z` by finite difference (below).
+- `sr-l2c8-100ep/`, `lr-l2c8-100ep/`.
