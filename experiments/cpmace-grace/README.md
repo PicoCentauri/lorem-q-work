@@ -61,6 +61,32 @@ on the `charge-conditioning` branch). `TF_USE_LEGACY_KERAS=1` is **required**:
 TensorFlow pulls in keras 3.x, and tensorpotential needs the legacy API bundled
 with TF. No `cuda` module is loaded — `tensorflow[and-cuda]` ships its own.
 
+## TODO — do these when run 2 (job 4033556) lands
+
+**Rename `WeightedSSEWorkFunctionLoss` -> `WeightedWorkFunctionLoss`.** No
+deprecated alias; still in development, so just change it everywhere.
+
+The name is wrong: GRACE's convention is `Weighted<SHAPE><TARGET>Loss` with the
+loss shape in the name (`WeightedSSEForceLoss` vs `WeightedHuberForceLoss` are
+separate classes, and `type:` picks between them via a dispatch dict). Our class
+takes `type` as a constructor argument instead — correct, because the
+`extra_components` path resolves a class *by name* with no dispatch dict — but
+it means the SSE prefix is a lie the moment `type: huber` is set, which is
+exactly what run 2 does. Its log reads
+`1.0*WeightedSSEWorkFunctionLoss` while the object is running huber at
+delta 0.01. Same category of error as the `d_wf` -> `wf` metric rename.
+
+Four files reference it:
+
+- `grace-tensorpotential/tensorpotential/extra/charge/loss.py` (the class, and
+  its docstring's usage example)
+- `grace-tensorpotential/tensorpotential/extra/extra_losses.py` (import + `__all__`)
+- `experiments/cpmace-grace/input.yaml` (run 1)
+- `experiments/cpmace-grace/w280-12-1-huber-fp32/input.yaml` (run 2)
+
+Editing the two `input.yaml` files rewrites the record of what actually ran, so
+do it in the same commit as the rename and say so in the message.
+
 ## Results
 
 `GRACE_2LAYER_FILM` small, 323 epochs (20,000 updates), 2h05m on one A100.
