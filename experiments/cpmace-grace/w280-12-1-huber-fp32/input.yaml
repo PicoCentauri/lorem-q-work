@@ -50,20 +50,26 @@ fit:
   #     1000 : 16 : 1  square -> E 15.5% / F 73.4% / W 11.1%
   #     1000 : 16 : 1  huber  -> E 28.1% / F 64.0% / W  7.9%
   #
-  # At delta 0.01 these give E 16.3% / F 74.5% / W 9.2%, against razor's tuned
-  # triple of 16.4 / 78.6 / 5.0 -- razor's energy share with roughly double the
-  # work-function share.
+  # At delta 0.01, 280 : 12 : 1 gives E 12.3% / F 75.3% / W 12.4% -- a
+  # deliberate 12.5/75/12.5 split. Against razor's tuned 16.4 / 78.6 / 5.0 that
+  # is ~2.5x the work-function emphasis, a bet on the electrochemistry that
+  # runs into the ~1.7x force cost razor measured for a large WF share. This
+  # dataset has not tested that, which is part of the point of the run.
+  #
+  # Forces at 12 rather than 16 is not arbitrary: the exact solution for those
+  # shares is 285.1 : 12 : 1.01, so anchoring there makes the work-function
+  # weight come out at 1 without a fraction.
   #
   # The weights are delta-dependent (holding shares fixed, the energy weight
   # runs 271 -> 466 -> 707 as delta goes 0.005 -> 0.01 -> 0.02), so the two must
   # be quoted and changed together.
   #
-  # NOTE this is one iteration of a fixed point: raising the energy weight
-  # lowers the energy error, which lowers its realised share. Expect the
-  # retrained model to land somewhat under 16%.
+  # NOTE this is one iteration of a fixed point: the weights come from run 1's
+  # converged errors, and raising the energy weight lowers the energy error,
+  # which lowers its realised share. Expect to land somewhat under 12.5%.
   loss:
-    energy: { weight: 500, type: huber, delta: 0.01 }
-    forces: { weight: 16, type: huber, delta: 0.01 }
+    energy: { weight: 280, type: huber, delta: 0.01 }
+    forces: { weight: 12, type: huber, delta: 0.01 }
     extra_components:
       # delta given explicitly: the wizard only applies its delta to energy and
       # forces, and WeightedSSEWorkFunctionLoss defaults to 0.1, which for
@@ -84,11 +90,17 @@ fit:
   scheduler: cosine_decay
   scheduler_params: { minimum_learning_rate: 0.00066667 }   # = lr / 12
 
-  target_total_updates: 20000   # 62 updates/epoch -> 323 epochs, as run 1
-  batch_size: 16
-  # deliberately NOT the wizard's 4*batch_size = 64: run 1 peaked at 97% of an
-  # 80 GB card. float32 params should relieve that, but raising the eval batch
-  # 2x at the same time is how you find out with an OOM 30 epochs in.
+  # 40000, not 20000: batch_size and target_total_updates are coupled. At 8
+  # structures/batch there are 123 updates per epoch instead of 61, so holding
+  # updates at 20000 would give 162 epochs -- HALF the data exposure of run 1,
+  # which is the opposite of optimising harder. 40000 keeps 325 epochs (run 1
+  # had 327) and the same total compute, so this buys 2x the gradient updates
+  # over the same number of passes, which is the actual small-batch argument.
+  target_total_updates: 40000   # 123 updates/epoch -> 325 epochs
+  batch_size: 8                 # 8 x 207 = 1656 atoms/batch
+  # the wizard would use 4*batch_size = 32, which this now matches by accident.
+  # Run 1 peaked at 97% of an 80 GB card at batch 16 / float64; halving the
+  # train batch and dropping to float32 leaves plenty of headroom here.
   test_batch_size: 32
 
   jit_compile: True
