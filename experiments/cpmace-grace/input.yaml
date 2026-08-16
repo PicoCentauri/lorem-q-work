@@ -1,0 +1,71 @@
+seed: 1
+cutoff: 6.0
+
+data:
+  filename: data/train.xyz
+  test_filename: data/valid.xyz
+  # Every frame is C70 H89 N Ni O46, so the per-element least-squares fit is
+  # rank-deficient in the individual E0s -- it can only resolve the overall
+  # offset. That is all we need: it moves E/atom off -6.4 eV so the network
+  # learns a residual rather than a large constant.
+  reference_energy: auto
+  save_dataset: True
+  extra_components:
+    # supplies total_charge (a model INPUT, read by FiLM) and the
+    # work_function label. Resolved via tensorpotential.extra.extra_data_builders.
+    TotalChargeDataBuilder:
+      fit_work_function: True
+
+potential:
+  preset: GRACE_2LAYER_FILM
+  param_dtype: float64
+  kwargs:
+    # GRACE_2LAYER "small" settings, plus the FiLM block
+    lmax: [4, 3]
+    max_order: 4
+    indicator_lmax: 1
+    n_rad_max: [32, 32]
+    prod_func_n_max: [32, 32]
+    n_mlp_dens: 12
+    n_rad_base: 8
+    # --- charge conditioning ---
+    charge_hidden_layers: [16]
+    charge_activation: silu
+    # raw total charge, matching LOREM so the two are comparable. q spans only
+    # [-2.31, -1.26] here and every frame has the same cell and composition, so
+    # per_atom / per_area would just rescale by a constant.
+    charge_normalize: none
+
+fit:
+  loss:
+    energy: { weight: 16, type: square }
+    forces: { weight: 32, type: square }
+    extra_components:
+      # resolved via tensorpotential.extra.extra_losses
+      WeightedSSEWorkFunctionLoss: { weight: 10, type: square }
+
+  # emits work_function = dE/dq from the same tape as the forces
+  train_function: ComputeBatchEnergyForcesCharge
+  compute_function: ComputeStructureEnergyForcesVirialCharge
+
+  optimizer: Adam
+  learning_rate: 0.008
+  learning_rate_reduction:
+    factor: 0.5
+    patience: 15
+    min: 5.0e-5
+    stop_at_min: True
+
+  target_total_updates: 20000   # 984 frames / batch 16 = 62 updates/epoch -> ~320 epochs
+  batch_size: 16                # 16 x 207 atoms = 3312 atoms/batch
+  test_batch_size: 32
+
+  jit_compile: True
+  eval_init_stats: True
+  checkpoint_freq: 5
+  progressbar: False
+  train_shuffle: True
+
+  train_max_n_buckets: auto
+  test_max_n_buckets: auto
+  auto_bucket_max_padding: 0.3
