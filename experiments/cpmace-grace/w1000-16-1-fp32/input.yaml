@@ -1,0 +1,84 @@
+seed: 1
+cutoff: 6.0
+
+data:
+  # shared with the parent -- ../prepare.py writes these once
+  filename: ../data/train.xyz
+  test_filename: ../data/valid.xyz
+  reference_energy: auto
+  save_dataset: True
+  extra_components:
+    TotalChargeDataBuilder:
+      fit_work_function: True
+
+potential:
+  preset: GRACE_2LAYER_FILM
+  # CHANGED from the first run (was float64). This is gracemaker's own default
+  # (wizard.py:285) and means mixed precision: parameters FP32, geometry FP64.
+  # The first run sat at 79.7/81.9 GB, i.e. 97% of the card, with no headroom
+  # for a larger batch or the BEC forward-over-reverse pass. On an A100, FP64
+  # is 9.7 TFLOPS against FP32's 19.5, and tensorpotential disables TF32, so
+  # expect ~1.3-1.8x -- not a clean 2x, since geometry stays FP64.
+  param_dtype: float32
+  kwargs:
+    lmax: [4, 3]
+    max_order: 4
+    indicator_lmax: 1
+    n_rad_max: [32, 32]
+    prod_func_n_max: [32, 32]
+    n_mlp_dens: 12
+    n_rad_base: 8
+    charge_hidden_layers: [16]
+    charge_activation: silu
+    charge_normalize: none
+
+fit:
+  # CHANGED from the first run (was 16 : 32 : 10). Those gracemaker defaults
+  # left the energy holding 0.10% of the loss -- effectively untrained, the
+  # same failure ../../cpmace/ diagnosed for cp-MACE's own 1:100:10 weights.
+  #
+  # Decomposing run 1's loss (reconstructs the logged total to 0.6%) gives, at
+  # its converged errors:
+  #     1000 : 16 : 1  ->  E 15.1% / F 73.9% / W 11.0%
+  # against razor's tuned triple of 16.4 / 78.6 / 5.0, so this holds razor's
+  # energy share while roughly doubling the work-function share.
+  #
+  # NOTE this is one iteration of a fixed point: raising the energy weight
+  # lowers the energy error, which lowers its realised share. Expect the
+  # retrained model to land somewhat under 15%.
+  loss:
+    energy: { weight: 1000, type: square }
+    forces: { weight: 16, type: square }
+    extra_components:
+      WeightedSSEWorkFunctionLoss: { weight: 1, type: square }
+
+  train_function: ComputeBatchEnergyForcesCharge
+  compute_function: ComputeStructureEnergyForcesVirialCharge
+
+  optimizer: Adam
+  opt_params: {
+    learning_rate: 0.008,
+    use_ema: True,
+    ema_momentum: 0.99,
+    weight_decay: null,
+    clipnorm: 1.0,
+  }
+  scheduler: cosine_decay
+  scheduler_params: { minimum_learning_rate: 0.00066667 }   # = lr / 12
+
+  target_total_updates: 20000   # 62 updates/epoch -> 323 epochs, as run 1
+  batch_size: 16
+  # deliberately NOT the wizard's 4*batch_size = 64: run 1 peaked at 97% of an
+  # 80 GB card. float32 params should relieve that, but raising the eval batch
+  # 2x at the same time is how you find out with an OOM 30 epochs in.
+  test_batch_size: 32
+
+  jit_compile: True
+  eval_init_stats: True
+  checkpoint_freq: 5
+  progressbar: False
+  train_shuffle: True
+
+  train_max_n_buckets: auto
+  test_max_n_buckets: auto
+  auto_bucket_max_padding: 0.3
