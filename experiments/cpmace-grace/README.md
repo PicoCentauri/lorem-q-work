@@ -64,7 +64,8 @@ with TF. No `cuda` module is loaded — `tensorflow[and-cuda]` ships its own.
 ## TODO — do these when run 2 (job 4033556) lands
 
 **Rename `WeightedSSEWorkFunctionLoss` -> `WeightedWorkFunctionLoss`.** No
-deprecated alias; still in development, so just change it everywhere.
+deprecated alias; still in development. Rename the class only -- the run
+configs stay frozen (see below).
 
 The name is wrong: GRACE's convention is `Weighted<SHAPE><TARGET>Loss` with the
 loss shape in the name (`WeightedSSEForceLoss` vs `WeightedHuberForceLoss` are
@@ -76,16 +77,22 @@ exactly what run 2 does. Its log reads
 `1.0*WeightedSSEWorkFunctionLoss` while the object is running huber at
 delta 0.01. Same category of error as the `d_wf` -> `wf` metric rename.
 
-Four files reference it:
+Rename in **two** files only:
 
 - `grace-tensorpotential/tensorpotential/extra/charge/loss.py` (the class, and
   its docstring's usage example)
 - `grace-tensorpotential/tensorpotential/extra/extra_losses.py` (import + `__all__`)
-- `experiments/cpmace-grace/input.yaml` (run 1)
-- `experiments/cpmace-grace/w280-12-1-huber-fp32/input.yaml` (run 2)
 
-Editing the two `input.yaml` files rewrites the record of what actually ran, so
-do it in the same commit as the rename and say so in the message.
+**Leave both `input.yaml` files alone** -- `experiments/cpmace-grace/input.yaml`
+(run 1) and `w280-12-1-huber-fp32/input.yaml` (run 2). They are the record of
+what actually ran and stay frozen at the old name.
+
+Consequence, accepted deliberately: with no deprecated alias, those two configs
+will no longer execute as written -- `extra_components` resolves the loss class
+by name, so `WeightedSSEWorkFunctionLoss` will raise `NameError: Could not find
+loss function`. They remain accurate records, not runnable ones. **To re-run
+either config, substitute `WeightedWorkFunctionLoss` in a scratch copy.** Any
+new experiment uses the new name from the start.
 
 ## Results
 
