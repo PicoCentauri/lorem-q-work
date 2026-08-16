@@ -39,7 +39,15 @@ fit:
   # run 2 drove the energy error down so far that those same weights now give
   # it only 2.6%. The energy weight has to rise ~7x just to hold its share.
   #
-  # 2000 : 12 : 3.5 at delta 0.01 gives E 12.1% / F 55.2% / W 32.7%.
+  # 1000 : 10 : 2.5 at delta 0.01 gives E 8.0% / F 61.0% / W 31.0%.
+  #
+  # The energy deliberately gets less than the 12% an equal-thirds instinct
+  # suggests: it is already at 0.633 meV/atom against LOREM's 0.561, while
+  # forces are the real gap (21.5 against cp-MACE's 16.5), so budget defending
+  # an already-good target is wasted. 8% rather than the 4% that 500:10:2.5
+  # would give, because a share DECAYS as its target improves -- run 2's energy
+  # went 12.3% -> 2.6% in 347 epochs -- and starting at 4% would reach run 1's
+  # untrained regime within a few hundred epochs.
   #
   # The work-function share goes 12.4% -> 32.7%, back toward run 1's 43%, which
   # is the configuration that produced 33.4 mV -- already inside cp-MACE's
@@ -47,10 +55,10 @@ fit:
   # Forces keep 55%, down from run 2's 75%, on the bet that the extra capacity
   # more than compensates.
   loss:
-    energy: { weight: 2000, type: huber, delta: 0.01 }
-    forces: { weight: 12, type: huber, delta: 0.01 }
+    energy: { weight: 1000, type: huber, delta: 0.01 }
+    forces: { weight: 10, type: huber, delta: 0.01 }
     extra_components:
-      WeightedSSEWorkFunctionLoss: { weight: 3.5, type: huber, delta: 0.01 }
+      WeightedSSEWorkFunctionLoss: { weight: 2.5, type: huber, delta: 0.01 }
 
   train_function: ComputeBatchEnergyForcesCharge
   compute_function: ComputeStructureEnergyForcesVirialCharge
