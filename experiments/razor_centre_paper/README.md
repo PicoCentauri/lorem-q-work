@@ -118,3 +118,53 @@ updates are.
 ## Results
 
 Not yet run.
+
+## Results
+
+All three ran the full 800 epochs with no NaN (8h36m / 8h45m / 16h50m; the
+`bec` run costs ~2x per step for the forward-over-reverse pass).
+
+`evaluate.py` on the checkpointed models. **`test` is the publication's own
+515-frame test set**, untouched; `valid` is the 460-frame carve-out:
+
+| split | run | E (meV/atom) | F (meV/Å) | Φ (V) | Z\* (e) |
+|---|---|---|---|---|---|
+| test | `sr` | 0.59 | 29.67 | 0.1239 | 0.0398 |
+| test | **`lr`** | **0.56** | **26.90** | 0.0875 | 0.0345 |
+| test | `sr-bec` | 0.60 | 30.69 | **0.0845** | **0.0193** |
+| valid | `sr` | 0.61 | 29.31 | 0.1189 | 0.0401 |
+| valid | `lr` | 0.56 | 26.32 | 0.0854 | 0.0518 |
+| valid | `sr-bec` | 0.68 | 30.30 | 0.0765 | 0.0192 |
+
+**valid and test agree closely** — 0.59 vs 0.61 on energy, 29.7 vs 29.3 on
+forces — which is what a clean split should look like, and confirms the
+publication's train/test division is not adversarial to ours.
+
+**The Ewald head wins forces and energy**, as everywhere else: `lr` is 9-10%
+better on forces than `sr` at identical settings.
+
+### Supervising `bec_z` helps the work function
+
+`sr-bec` has the **best work function of the three** (0.0845 on test, against
+`lr`'s 0.0875 and `sr`'s 0.1239) — a 32% improvement over `sr` — despite being
+short-range, and despite carrying a *smaller* work-function share (4.8% vs
+5.0%, since `bec_z` takes 3.2%).
+
+Both are charge derivatives — Φ = ∂E/∂q, Z\* = −(A ε₀) ∂²E/∂r∂q — so a term
+constraining the second evidently constrains the first. `../razor_centre/`
+saw the same, and this is the cleaner demonstration: `sr` and `sr-bec` differ
+only by `predict_bec` and the added loss term.
+
+It costs forces: 30.69 against `sr`'s 29.67, ~3%. Cheap for a 32% gain on Φ
+and a 2× gain on Z\*.
+
+### `bec_z` supervision is worth 2× on `bec_z` itself
+
+**0.0193 e on test, against 0.0398 unsupervised** — and against a label std of
+0.146 e, so ~7.6× better than predicting the mean. For comparison
+`../razor_centre/sr-wf-bec/` reached 0.0373 and `../razor/`'s unsupervised
+`lr` 0.0270, so this is the best Born-effective-charge model in the project.
+
+Note `lr`'s Z\* is much worse on valid (0.0518) than test (0.0345) while every
+other metric matches across the two splits. Unexplained; worth a look before
+quoting `lr`'s Z\* anywhere.
