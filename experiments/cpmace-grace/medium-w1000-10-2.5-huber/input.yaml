@@ -74,15 +74,24 @@ fit:
   scheduler: cosine_decay
   scheduler_params: { minimum_learning_rate: 0.00066667 }   # = lr / 12
 
-  # 160000 updates = 812 epochs at 197 updates/epoch, above LOREM's 141,000 on
-  # this dataset. Sized for ~7 h assuming the medium model costs ~1.8x run 2's
-  # measured 17.1 s/epoch; if it is nearer 2.2x this becomes ~9.7 h, still far
-  # inside the 24 h wall limit, so the schedule completes either way.
+  # 60,000 updates = 488 epochs at 123 updates/epoch (984 / batch 8) -- the
+  # round-number stand-in for "500 epochs", which would be 61,500.
   #
-  # Run 2 was still taking new best checkpoints at epoch 347/508, so neither
-  # run has reached its plateau -- the budget has been binding throughout.
-  target_total_updates: 160000  # 197 updates/epoch -> 812 epochs
-  batch_size: 5                 # 5 x 207 = 1035 atoms/update
+  # Batch 8 rather than run 2's 5: 1656 atoms/update. Same structures per epoch
+  # either way, so the compute per epoch is unchanged and larger batches tend
+  # to use the GPU slightly better; what changes is 123 updates/epoch instead
+  # of 197, i.e. fewer, less noisy steps.
+  #
+  # Runtime ~4-5 h, from run 2's measured 17.1 s/epoch (small model, batch 5)
+  # scaled by an assumed 1.8-2.2x for the medium model. Well inside the 24 h
+  # wall limit.
+  #
+  # For scale, LOREM needed 141,000 updates here and was still improving; run 2
+  # was still taking new best checkpoints at epoch 347/508. Neither run has
+  # plateaued, so if this one's best checkpoint is again its last epoch, the
+  # budget is still the binding constraint rather than the architecture.
+  target_total_updates: 60000   # 123 updates/epoch -> 488 epochs
+  batch_size: 8                 # 8 x 207 = 1656 atoms/update
   test_batch_size: 32
 
   jit_compile: True
