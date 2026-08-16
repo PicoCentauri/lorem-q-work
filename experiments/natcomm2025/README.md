@@ -125,31 +125,48 @@ Wall times are **not** comparable: both jobs landed on node a0933 and shared
 its CPU and I/O, which is why `lr` came out *faster* than `sr`, backwards from
 every other folder.
 
-### The Born effective charges are bad, and that is the interesting result
+### The Born effective charges: a surface-area bug, now fixed
 
-`evaluate.py` derives `bec_z` by finite difference — Z\* = (A ε₀) dF/dq at
-fixed geometry, which the validation split supports because it holds complete
-charge stencils (275 geometries, `bec_z` derived for **1714/1714** frames).
-F(q) is linear to ~4 meV/Å against a 602 meV/Å force scale, so the reference
-is sound.
+This section previously read "the Born effective charges are bad, and that is
+the interesting result", reporting Z\* RMSE 0.2757 / 0.2954 against a label
+std of 0.145 e and concluding both models were **worse than predicting the
+mean**. That was wrong, and the parity plot is what gave it away: the
+predictions formed a *coherent band of slope ~2.5*, not a cloud. Scatter means
+a model has not learned; a clean slope means a scale factor.
 
-Against a label std of ~0.145 e:
+Z\* = (A ε₀) dF/dq, and `evaluate.py` computed the area **twice** — once for
+the finite-difference reference and once for the model prediction. The
+reference used |b × c| = 171.20 Å², correct: this dataset's slab normal is the
+**first** cell vector (a = 30.888 Å). The prediction path used
+|a × b| = 434.29 Å², carried over verbatim from `../razor/`, where the normal
+*is* the third vector and a, b do span the surface. Ratio **2.5367**, matching
+the plot. Both paths now go through one `surface_area()` helper.
+
+Corrected, against a label std of ~0.145 e:
 
 | | Z\* RMSE | vs label std |
 |---|---|---|
-| `sr` | 0.2757 | **1.9×** |
-| `lr` | 0.2954 | **2.0×** |
+| `sr` | **0.0451** | 0.31× |
+| `lr` | 0.0573 | 0.40× |
 
-**Both are worse than predicting the mean.** Neither run supervises `bec_z`
-here, so this is an unsupervised probe — but `../razor/`'s *unsupervised* `sr`
-reached 0.0399 on the same kind of quantity, and `../razor_centre_paper/`'s
-supervised run reaches 0.0192. So this is not simply "unsupervised is hard".
+So both are **~3x better than the mean predictor**, not 2x worse, and the
+figure is ~6x better than the number first reported — more than the 2.54
+scale factor alone, because removing a systematic bias helps quadratically.
+For an *unsupervised* probe this is in line with `../razor/`'s unsupervised
+`sr` at 0.0399, and the anomaly that needed explaining simply is not there.
 
-And `lr` is *worse* than `sr` on it, inverting the pattern it wins on
-everywhere else. Unexplained. The most likely candidates are the 3D Ewald path
-(this and cpmace are `pbc = T T T`, unlike razor's slab) and the compensating
-plate making dF/dq an artefact of the supercell rather than a local property —
-but neither is tested.
+What does survive: **`lr` is worse than `sr` on Z\*** (0.0573 vs 0.0451),
+inverting the pattern it wins on everywhere else, and cpmace shows the same.
+The 3D Ewald path and the compensating plate remain the candidates. That is
+now a modest effect rather than a glaring one, but it is real.
+
+**The lesson is about the check, not the physics.** Two independent
+computations of one physical quantity is the bug; the scalar RMSE hid it and
+the parity plot exposed it in one glance. Note also that lorem's own
+`LoremQ._bec_z` (`models/mlip.py`) hardcodes |a × b| behind a "pbc = T T F"
+comment — right for razor, wrong here. It changes nothing for these runs since
+neither supervises `bec_z`, but any future `predict_bec: True` run on this
+dataset would be silently mis-scaled by the same 2.54.
 
 **One caveat on Z\***: it is one *column* of the 3×3 tensor, not the whole
 thing. Charging a slab makes a field along the normal only, so `dF/dq` gives
