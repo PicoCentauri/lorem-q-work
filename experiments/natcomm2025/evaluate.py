@@ -42,6 +42,26 @@ from marathon.io import from_dict, read_msgpack, read_yaml
 # vacuum permittivity in e^2 / (eV * Angstrom)
 EPSILON_0 = 0.005526349406
 
+# The slab normal is the FIRST cell vector here (a = 30.888 A, with b and c
+# spanning the 171.20 A^2 surface), not the third as in razor. Getting this
+# wrong is not a cosmetic slip: Z* = (A eps0) dF/dq scales linearly with the
+# area, and |a x b| = 434.29 A^2 overstates it by exactly 2.5367x. The first
+# evaluation of this dataset did precisely that, because the reference path
+# and the prediction path each computed the area independently and only the
+# reference was ported from razor correctly. Hence one helper, used by both.
+#
+# Note lorem's own LoremQ._bec_z (models/mlip.py) hardcodes |a x b| with the
+# comment "pbc = T T F" -- correct for razor, wrong for this dataset. It does
+# not affect the runs here (none of them train on bec_z), but any future
+# `predict_bec: True` run on natcomm2025 would be silently mis-scaled.
+SLAB_NORMAL_AXIS = 0
+
+
+def surface_area(cell):
+    """Area of the face perpendicular to the slab normal, in A^2."""
+    i, j = [k for k in range(3) if k != SLAB_NORMAL_AXIS]
+    return float(np.linalg.norm(np.cross(cell[i], cell[j])))
+
 DATA = "../../datasets/natcomm2025"
 
 # must match prepare.py -- the split is reconstructed here rather than stored
@@ -170,7 +190,7 @@ def load_frames(name, polarizable_only, n=None):
             continue
         F = np.stack([a.get_forces() for a in grp])          # (nq, natoms, 3)
         cell = grp[0].get_cell()[:]
-        area = np.linalg.norm(np.cross(cell[1], cell[2]))    # slab normal is x
+        area = surface_area(cell)
         slope = np.polyfit(q, F.reshape(len(q), -1), 1)[0]
         z = (area * EPSILON_0) * slope.reshape(-1, 3)
         for a in grp:
@@ -269,7 +289,10 @@ def make_predict_fn(model):
             (batch.total_charge,),
             (jnp.ones_like(batch.total_charge),),
         )
-        area = jnp.linalg.norm(jnp.cross(sr.cell[:, 0, :], sr.cell[:, 1, :]), axis=-1)
+        # NOT jnp.cross(cell[0], cell[1]) -- see SLAB_NORMAL_AXIS above. This
+        # is the line that was wrong, inherited verbatim from ../razor/.
+        i, j = [k for k in range(3) if k != SLAB_NORMAL_AXIS]
+        area = jnp.linalg.norm(jnp.cross(sr.cell[:, i, :], sr.cell[:, j, :]), axis=-1)
         scale = (area * EPSILON_0)[sr.atom_to_structure][:, None]
         return -d2E_drdq * scale
 
