@@ -90,17 +90,29 @@ fit:
   scheduler: cosine_decay
   scheduler_params: { minimum_learning_rate: 0.00066667 }   # = lr / 12
 
-  # 40000, not 20000: batch_size and target_total_updates are coupled. At 8
-  # structures/batch there are 123 updates per epoch instead of 61, so holding
-  # updates at 20000 would give 162 epochs -- HALF the data exposure of run 1,
-  # which is the opposite of optimising harder. 40000 keeps 325 epochs (run 1
-  # had 327) and the same total compute, so this buys 2x the gradient updates
-  # over the same number of passes, which is the actual small-batch argument.
-  target_total_updates: 40000   # 123 updates/epoch -> 325 epochs
-  batch_size: 8                 # 8 x 207 = 1656 atoms/batch
-  # the wizard would use 4*batch_size = 32, which this now matches by accident.
-  # Run 1 peaked at 97% of an 80 GB card at batch 16 / float64; halving the
-  # train batch and dropping to float32 leaves plenty of headroom here.
+  # batch_size and target_total_updates are coupled, so they are set together.
+  # 984 / 5 = 197 updates/epoch, so 50000 updates is 253 epochs -- FEWER passes
+  # over the data than run 1's 327, despite 2.5x the gradient updates. 64400
+  # would match run 1's exposure exactly if that turns out to matter.
+  #
+  # For scale: LOREM needed 141,000 updates on this dataset (1000 epochs at 141
+  # batches/epoch) and was still improving on forces at the end -- its last
+  # 100-epoch window was -0.68%. Run 1 here reached 21.47 meV/A in 20,000, so
+  # GRACE is far more update-efficient, but run 1's best checkpoint was its
+  # FINAL epoch, i.e. it stopped while still improving. A flattening cosine
+  # tail is the schedule ending, not convergence. 50000 is a bet that GRACE
+  # converges much faster than LOREM; if the best checkpoint is again the last
+  # epoch, that bet was wrong and the budget should go up.
+  #
+  # batch 5 = 1035 atoms/update. Not a power of two, which does not matter:
+  # batch_size counts structures, while the tensor shapes that reach the GPU
+  # come from the padded bucket (total atoms, total neighbours). Every frame is
+  # 207 atoms, so padding is cheap regardless -- run 1 ran +0.84% on atoms.
+  target_total_updates: 50000   # 197 updates/epoch -> 253 epochs
+  batch_size: 5                 # 5 x 207 = 1035 atoms/update
+  # the wizard would use 4*batch_size = 20. Kept at 32: run 1 peaked at 97% of
+  # an 80 GB card at batch 16 / float64, and batch 5 + float32 leaves ample
+  # headroom, while a larger eval batch means fewer eval steps.
   test_batch_size: 32
 
   jit_compile: True
