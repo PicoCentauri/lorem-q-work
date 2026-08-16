@@ -48,13 +48,33 @@ fit:
   train_function: ComputeBatchEnergyForcesCharge
   compute_function: ComputeStructureEnergyForcesVirialCharge
 
+  # The gracemaker wizard's Adam block. Note the learning rate lives in
+  # opt_params -- a bare `fit: learning_rate:` is silently ignored
+  # (cli/train.py reads fit_config["opt_params"]["learning_rate"]) and you get
+  # the fallback {learning_rate: 0.01, amsgrad: True} instead, with no EMA and
+  # no gradient clipping.
   optimizer: Adam
-  learning_rate: 0.008
-  learning_rate_reduction:
-    factor: 0.5
-    patience: 15
-    min: 5.0e-5
-    stop_at_min: True
+  opt_params: {
+    learning_rate: 0.008,
+    use_ema: True,
+    ema_momentum: 0.99,
+    weight_decay: null,
+    clipnorm: 1.0,
+  }
+
+  # cosine_decay is what `gracemaker -t` emits for Adam (wizard.py picks
+  # reduce_on_plateau only when loss-weight switching is on, because switching
+  # is implemented for CustomReduceLROnPlateau alone). The library itself has
+  # no default: with neither `scheduler` nor the legacy
+  # `learning_rate_reduction` present, create_lr_scheduler returns None and the
+  # LR stays constant.
+  #
+  # `minimum_learning_rate`, NOT `minimal_learning_rate`: the wizard emits the
+  # latter for the cosine branch but read_decay_kwargs only ever looks up the
+  # former, so the wizard's own lr/12 is silently dropped in favour of the
+  # 1e-4 default. Upstream typo -- spelling it correctly here so it applies.
+  scheduler: cosine_decay
+  scheduler_params: { minimum_learning_rate: 0.00066667 }   # = lr / 12
 
   target_total_updates: 20000   # 984 frames / batch 16 = 62 updates/epoch -> ~320 epochs
   batch_size: 16                # 16 x 207 atoms = 3312 atoms/batch
