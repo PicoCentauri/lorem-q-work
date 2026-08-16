@@ -63,4 +63,54 @@ with TF. No `cuda` module is loaded — `tensorflow[and-cuda]` ships its own.
 
 ## Results
 
-Not yet run.
+`GRACE_2LAYER_FILM` small, 323 epochs (20,000 updates), 2h05m on one A100.
+Test split (109 frames), best checkpoint:
+
+| | E (meV/atom) | F (meV/Å) | WF (V) |
+|---|---|---|---|
+| `../cpmace/` LOREM best (`sr` GRACE-like) | **0.561** | 29.33 | 0.0414 |
+| **GRACE-2L + FiLM** | 1.25 | **21.47** | **0.0334** |
+| cp-MACE published | — | **16.5** | 0.03–0.04 |
+
+**Forces improve 27% over LOREM's best** (21.47 vs 29.33 meV/Å), so the
+backbone was a real part of the gap this experiment was built to test. It does
+not close it: cp-MACE's published 16.5 is still 30% ahead. (Their 8.67 comes
+from adding force-only structures we do not have, so it is not a like-for-like
+target.)
+
+**The work function matches cp-MACE** — 0.0334 V against their 0.03–0.04 eV,
+and 19% better than LOREM's 0.0414.
+
+That last number is the one worth keeping. `../cpmace/README.md` flagged the
+risk that "a target that is cheap to fit as an independent head is not
+necessarily cheap to fit as a derivative that must reshape E(q)": cp-MACE's
+Fermi level is a **direct output head** carrying no thermodynamic-consistency
+obligation, ours is `dE/dq` from autograd. On this evidence that constraint
+costs approximately nothing — we match them on the target their architecture
+is free to fit directly. One data point, not a settled result, but it is the
+argument for keeping the derivative formulation, which is what makes
+constant-potential MD well-posed (forces = −∇Ω, with Ω conserved).
+
+### The energy is undertrained, and it is the loss weights
+
+Energy is 2.2x worse than LOREM's (1.25 vs 0.561 meV/atom). Decomposing the
+loss with the reported RMSEs reconstructs the logged total to 0.6%, so the
+shares are trustworthy:
+
+| target | weight | share |
+|---|---|---|
+| energy | 16 | **0.10%** |
+| forces | 32 | 56.9% |
+| work function | 10 | 43.0% |
+
+**The energy is effectively untrained.** This is the same failure `../cpmace/`
+diagnosed for cp-MACE's own 1:100:10 weights (energy at 0.0001%), reproduced
+here by accident: gracemaker's 16/32 defaults are tuned for plain E/F fitting
+and never anticipated a third target large enough to take 43% of the loss.
+
+Shares transfer between codes, weights do not. `2000 : 32 : 1` reproduces
+razor's tuned triple on this data (E 16.0 / F 78.2 / W 5.8 against razor's
+16.4 / 78.6 / 5.0) and is the natural next run. Raising the work-function
+share instead costs forces -- razor's sweep found ~1.7x -- and forces are
+currently the only place this model beats LOREM, so that trade should be
+measured rather than assumed.
