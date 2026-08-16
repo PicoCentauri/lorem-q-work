@@ -1,0 +1,88 @@
+seed: 1
+cutoff: 6.0
+
+data:
+  filename: ../data/train.xyz
+  test_filename: ../data/valid.xyz
+  reference_energy: auto
+  save_dataset: True
+  extra_components:
+    TotalChargeDataBuilder:
+      fit_work_function: True
+
+potential:
+  preset: GRACE_2LAYER_FILM
+  param_dtype: float32
+  kwargs:
+    # GRACE_2LAYER "medium" settings (registry `settings` dict), up from the
+    # "small" ones runs 1 and 2 used. Capacity is the lever that improves the
+    # work function and forces *together* rather than trading them: on this
+    # dataset LOREM's larger GRACE-like model went 40.70 -> 29.33 meV/A on
+    # forces. The alternative -- pushing the work-function share higher at
+    # fixed capacity -- buys WF by giving up forces, which is the target we are
+    # furthest from (21.5 against cp-MACE's published 16.5).
+    lmax: [4, 3]
+    max_order: 4
+    indicator_lmax: 1
+    n_rad_max: [42, 32]
+    prod_func_n_max: [42, 64]
+    n_mlp_dens: 16
+    n_rad_base: 10
+    charge_hidden_layers: [16]
+    charge_activation: silu
+    charge_normalize: none
+
+fit:
+  # Weights re-derived from run 2's errors at epoch 347, NOT carried over.
+  # This is the fixed point moving, exactly as the previous config warned it
+  # would: 280 : 12 : 1 was built to give the energy 12.3% of the loss, but
+  # run 2 drove the energy error down so far that those same weights now give
+  # it only 2.6%. The energy weight has to rise ~7x just to hold its share.
+  #
+  # 2000 : 12 : 3.5 at delta 0.01 gives E 12.1% / F 55.2% / W 32.7%.
+  #
+  # The work-function share goes 12.4% -> 32.7%, back toward run 1's 43%, which
+  # is the configuration that produced 33.4 mV -- already inside cp-MACE's
+  # published 30-40 mV band. Run 2 cut WF to 12.4% and is tracking worse on it.
+  # Forces keep 55%, down from run 2's 75%, on the bet that the extra capacity
+  # more than compensates.
+  loss:
+    energy: { weight: 2000, type: huber, delta: 0.01 }
+    forces: { weight: 12, type: huber, delta: 0.01 }
+    extra_components:
+      WeightedSSEWorkFunctionLoss: { weight: 3.5, type: huber, delta: 0.01 }
+
+  train_function: ComputeBatchEnergyForcesCharge
+  compute_function: ComputeStructureEnergyForcesVirialCharge
+
+  optimizer: Adam
+  opt_params: {
+    learning_rate: 0.008,
+    use_ema: True,
+    ema_momentum: 0.99,
+    weight_decay: null,
+    clipnorm: 1.0,
+  }
+  scheduler: cosine_decay
+  scheduler_params: { minimum_learning_rate: 0.00066667 }   # = lr / 12
+
+  # 160000 updates = 812 epochs at 197 updates/epoch, above LOREM's 141,000 on
+  # this dataset. Sized for ~7 h assuming the medium model costs ~1.8x run 2's
+  # measured 17.1 s/epoch; if it is nearer 2.2x this becomes ~9.7 h, still far
+  # inside the 24 h wall limit, so the schedule completes either way.
+  #
+  # Run 2 was still taking new best checkpoints at epoch 347/508, so neither
+  # run has reached its plateau -- the budget has been binding throughout.
+  target_total_updates: 160000  # 197 updates/epoch -> 812 epochs
+  batch_size: 5                 # 5 x 207 = 1035 atoms/update
+  test_batch_size: 32
+
+  jit_compile: True
+  eval_init_stats: True
+  checkpoint_freq: 5
+  progressbar: False
+  train_shuffle: True
+
+  train_max_n_buckets: auto
+  test_max_n_buckets: auto
+  auto_bucket_max_padding: 0.3
