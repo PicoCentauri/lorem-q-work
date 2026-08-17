@@ -64,8 +64,8 @@ with TF. No `cuda` module is loaded — `tensorflow[and-cuda]` ships its own.
 
 ## Results
 
-Four runs. **Run 4 is the model**: it beats cp-MACE's published forces and does
-it in under half LOREM's wall time.
+Four runs. **Run 4 is the model**: on validation it beats cp-MACE's published
+forces *and* Fermi level, in under a third of LOREM's wall time.
 
 | | model | loss | updates | E (meV/atom) | F (meV/Å) | WF (mV) | wall |
 |---|---|---|---|---|---|---|---|
@@ -98,23 +98,51 @@ train forces ≈ test forces — underfitting, not overfitting).
 
 ### Against the published cp-MACE result
 
-| | forces (meV/Å) | work function |
-|---|---|---|
-| cp-MACE published | 16.5 | 30–40 mV |
-| **GRACE-2L + FiLM (run 4)** | **14.14** | **33.5 mV** |
+Numbers read out of `../../datasets/cpmace/ct5c00784.pdf` and its SI. **The
+train/validation distinction is essential here** — the paper's headline figures
+are training-set numbers and the SI's are validation, and they differ by 2x.
 
-**14% better than published on forces, and inside their work-function band.**
-Their 8.67 meV/Å comes from adding force-only structures we do not have, so it
-is not a like-for-like target.
+| source | split | F (meV/Å) | E_F / WF (meV) | E |
+|---|---|---|---|---|
+| cp-MACE, node augmentation (SI Fig S2) | **validation** | 16.51 | 40.05 | not reported |
+| cp-MACE, global feature (SI Fig S2) | **validation** | 19.55 | 39.68 | not reported |
+| cp-MACE, all 1093 structures (paper §3.2) | **train** | 8.4 | 10.8 | not reported |
+| **GRACE-2L + FiLM, run 4** | **validation** | **14.14** | **33.47** | 0.640 meV/atom |
+| GRACE-2L + FiLM, run 4 | train | 10.57 | 15.39 | 0.692 meV/atom |
 
-Worth restating what that means for the architecture question this folder was
-built to answer: our work function is `dE/dq` from autograd, thermodynamically
-consistent by construction, while cp-MACE's Fermi level is a **direct output
-head** carrying no such obligation. `../cpmace/README.md` flagged the risk that a
-target cheap to fit as an independent head need not be cheap to fit as a
-derivative that must reshape E(q). On this evidence it costs nothing.
+**Like for like on validation, GRACE is ahead on both**: forces 14.14 vs 16.51
+(14% better) and the work function 33.47 vs 40.05 mV (16% better). Their dataset
+is the same one — the paper states "the final training data set comprises 1093
+structures", exactly our 984 + 109.
+
+**Their 8.4 / 10.8 is a training-set fit, not held out.** Our training equivalents
+are 10.57 / 15.39, so cp-MACE fits the training data somewhat harder while
+generalising worse. Do not compare their 8.4 against our 14.14.
+
+Note also there are **two different ~8.x force numbers** in their papers, easy to
+conflate: 8.4 meV/Å is the train fit above, while **8.67 meV/Å** (SI Fig S3) is a
+validation number obtained by *adding force-only structures* to the training set —
+a larger dataset than the one released, so neither is a like-for-like target.
+
+**cp-MACE reports no energy RMSE anywhere**, in the paper or the SI, despite
+energy carrying weight 1.0 in their loss. So the energy column cannot be compared
+at all; the only external energy baseline is LOREM's.
+
+Their settings for context (SI §2): `128x0e + 128x1o`, cutoff **5.0 Å** (we use
+6.0), **batch size 2**, loss weights 100 : 1 : 10 for forces : energy : Fermi
+level — the same triple `../cpmace/` tried on LOREM, where it put the energy at
+0.0001% of the loss.
+
+One architectural point worth restating: our work function is `dE/dq` from
+autograd, thermodynamically consistent by construction, while cp-MACE's Fermi
+level is a **direct output head** carrying no such obligation.
+`../cpmace/README.md` flagged the risk that a target cheap to fit as an
+independent head need not be cheap to fit as a derivative that must reshape E(q).
+On this evidence it costs nothing — we beat the head on its own target.
 
 ### Against LOREM on the same dataset
+
+(All GRACE and LOREM numbers here are validation.)
 
 Best GRACE (run 4) against best LOREM (`../cpmace/sr-grace-like-d128-l3-c32-1000ep`):
 
