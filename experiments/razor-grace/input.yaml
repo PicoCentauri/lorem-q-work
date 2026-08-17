@@ -38,14 +38,21 @@ fit:
   # Weights derived from LOREM's converged errors on THIS dataset
   # (../razor_centre_paper/ lr: 0.56 meV/atom, 26.90 meV/A, 0.0875 V) to
   # reproduce cpmace run 4's realised shares:
-  #     3900 : 10 : 0.16  ->  E 12.6% / F 74.7% / W 12.6%
+  #     2000 : 10 : 0.15  ->  E 7.0% / F 80.3% / W 12.7%
   # Shares transfer between datasets, weights do not -- hence the re-derivation
   # rather than reusing cpmace's 500 : 10 : 0.7.
+  #
+  # The energy deliberately gets ~7%, not the 12.6% that would match cpmace run
+  # 4 exactly. LOREM already reaches 0.56 meV/atom here, and a share DECAYS as
+  # its target improves -- cpmace run 2's energy was designed at 12.3% and had
+  # fallen to 2.7% by convergence, still reaching 0.619 meV/atom. Starting high
+  # mostly spends early budget defending a target that converges anyway, so the
+  # freed budget goes to forces (74.7 -> 80.3%), which is the harder target.
   loss:
-    energy: { weight: 3900, type: square }
+    energy: { weight: 2000, type: square }
     forces: { weight: 10, type: square }
     extra_components:
-      WeightedWorkFunctionLoss: { weight: 0.16, type: square }
+      WeightedWorkFunctionLoss: { weight: 0.15, type: square }
 
   # 4138 train / batch 10 = 413 updates/epoch -> 218 epochs. 1080 atoms/update,
   # matching cpmace run 4's 1035, and 97M atom-updates against its 103.5M which

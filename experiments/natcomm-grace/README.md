@@ -12,16 +12,19 @@ re-derived.
 |---|---|---|
 | preset | `GRACE_2LAYER_FILM`, small | as cpmace run 4 |
 | loss | **square**, not huber | huber cost 48% on forces in `../cpmace-grace/`'s control |
-| weights E:F:W | **43000 : 10 : 0.2** | E 12.7 / F 74.6 / W 12.8, matching cpmace run 4's shares |
+| weights E:F:W | **10000 : 10 : 0.2** | E 3.3 / F 82.6 / W 14.2 |
 | batch | 4 (932 atoms/update) | matches cpmace's 1035 atoms/update |
 | budget | 104,000 updates = 27 epochs | 97M atom-updates vs cpmace's 103.5M at 2h23m |
 
-**Why the energy weight is 43000.** MSE scales as error², so at a fixed share the
+**Why the energy weight is 10000.** MSE scales as error², so at a fixed share the
 energy weight scales as 1/error². This dataset's LOREM energy error (0.150
-meV/atom) is 8.3× smaller than cpmace's (1.249), so its MSE is 69× smaller and
-the weight is ~69× cpmace's 500. It means the energy here is unusually **easy** —
-E/atom has a label spread of only 5.55 meV and LOREM already reaches 0.15 — not
-that it needs more attention.
+meV/atom) is 8.3× smaller than cpmace's (1.249), so its MSE is 69× smaller — the
+weight is large because the energy here is unusually **easy**, not because it
+needs attention. Matching cpmace run 4's 12.6% share exactly would take 43000;
+10000 gives 3.3% instead, deliberately, because a share decays as its target
+improves (cpmace run 2's energy went 12.3% → 2.7% while still reaching 0.619
+meV/atom), so a high start spends early budget on a target that converges
+anyway. The freed budget goes to forces.
 
 **Only 27 epochs**, because this dataset is 15× larger than cpmace's: the same
 ~100k gradient updates and ~97M atom-updates, spread over more data and fewer

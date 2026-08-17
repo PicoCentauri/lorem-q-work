@@ -32,7 +32,7 @@ fit:
   # Weights derived from LOREM's converged errors on THIS dataset
   # (../natcomm2025/ lr: 0.15 meV/atom, 23.88 meV/A, 0.0699 V) to reproduce
   # cpmace run 4's realised shares:
-  #     43000 : 10 : 0.2  ->  E 12.7% / F 74.6% / W 12.8%
+  #     10000 : 10 : 0.2  ->  E 3.3% / F 82.6% / W 14.2%
   # 43000 looks alarming and is correct. MSE scales as error^2, so at a FIXED
   # share the energy weight scales as 1/error^2. natcomm's LOREM energy error
   # (0.150 meV/atom) is 8.3x smaller than cpmace's (1.249), hence 69x smaller
@@ -44,11 +44,14 @@ fit:
   # Not degenerate early either: with errors at label-spread scale the shares
   # start at E 22.2 / F 60.8 / W 17.0 and settle toward the target.
   #
-  # Arguably 12.6% over-defends an already-excellent target; 10000 : 10 : 0.2
-  # would give ~6% at init and ~3% converged, moving that budget to forces and
-  # the work function. Kept at the cpmace share for comparability.
+  # Hence 10000 rather than the 43000 that would match cpmace run 4's 12.6%
+  # share exactly: 12.6% over-defends a target LOREM already fits to 0.15
+  # meV/atom. A share also DECAYS as its target improves -- cpmace run 2's
+  # energy went 12.3% -> 2.7% over training while still reaching 0.619 -- so a
+  # high start mostly spends early budget on something that converges anyway.
+  # The freed budget goes to forces (74.6 -> 82.6%).
   loss:
-    energy: { weight: 43000, type: square }
+    energy: { weight: 10000, type: square }
     forces: { weight: 10, type: square }
     extra_components:
       WeightedWorkFunctionLoss: { weight: 0.2, type: square }
