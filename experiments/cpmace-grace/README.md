@@ -69,14 +69,30 @@ with TF. No `cuda` module is loaded — `tensorflow[and-cuda]` ships its own.
 | | E (meV/atom) | F (meV/Å) | WF / E_F (mV) | wall |
 |---|---|---|---|---|
 | cp-MACE, published (SI Fig S2, node augmentation) | not reported | 16.51 | 40.05 | not reported |
-| LOREM (`../cpmace/sr-grace-like-d128-l3-c32-1000ep`) | **0.561** | 29.33 | 41.4 | 7h39m |
+| LOREM short-range (`../cpmace/sr-grace-like-d128-l3-c32-1000ep`) | **0.561** | 29.33 | 41.4 | 7h39m |
+| LOREM **long-range** (`../cpmace/lr-small-l2c8-1000ep`) | 0.631 | 40.24 | 37.6 | 4h34m |
 | **GRACE-2L + FiLM (run 4)** | 0.640 | **14.14** | **33.47** | **2h23m** |
 
-All three columns are held-out validation on the same 1093-structure dataset.
-**GRACE wins forces and the work function**; LOREM keeps energy by 14%, which is
-a loss-weight choice (run 2 reached 0.619), and cp-MACE never reports an energy
-error at all. Wall times are not directly comparable across codebases — cp-MACE
-gives none, and LOREM's best is a larger model run for 1.41× the updates.
+All rows are held-out validation on the same 1093-structure dataset.
+**GRACE wins forces and the work function**; LOREM's short-range GRACE-like model
+keeps energy by 14%, which is a loss-weight choice (run 2 reached 0.619), and
+cp-MACE never reports an energy error at all.
+
+The two LOREM rows are listed separately because neither dominates: the
+GRACE-like model is LOREM's best on energy and forces, while **`lr` is LOREM's
+best work function** (37.6 mV) despite being the smaller d64 l2 c8 architecture —
+adding Ewald electrostatics bought 0.0421 → 0.0376 V on the charge response while
+barely moving forces (40.70 → 40.24). That is the clearest evidence in this
+project that long-range physics helps the work function specifically.
+
+Which makes GRACE's 33.47 mV notable: it beats LOREM's long-range model **without
+any long-range term at all** — the FiLM presets are purely short-range. Note also
+that `lr` run used `max_degree_lr: 0`, i.e. **monopole-only** Ewald with no
+dipoles, so the dipole physics has never actually been tested here. That is the
+Phase 0 experiment in `../../notes/dipole-term-plan.md`, and it is one config line.
+
+Wall times are not comparable across codebases — cp-MACE reports none, and
+LOREM's best is a larger model run for 1.41× the updates.
 
 Everything below is the supporting detail.
 
