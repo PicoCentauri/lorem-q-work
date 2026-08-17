@@ -1,0 +1,78 @@
+seed: 1
+cutoff: 6.0
+
+data:
+  filename: data/train.xyz
+  test_filename: data/valid.xyz
+  reference_energy: auto
+  save_dataset: True
+  extra_components:
+    TotalChargeDataBuilder:
+      # razor names the charge `bias_charge`; read it in place rather than
+      # renaming the data. A rename that silently fails leaves the charge at
+      # the 0.0 default -- the failure that cost ../razor_centre_paper/ two
+      # runs. The builder logs N/N structures and warns on any default.
+      charge_key: bias_charge
+      fit_work_function: True
+
+potential:
+  preset: GRACE_2LAYER_FILM
+  param_dtype: float32
+  kwargs:
+    lmax: [4, 3]
+    max_order: 4
+    indicator_lmax: 1
+    n_rad_max: [32, 32]
+    prod_func_n_max: [32, 32]
+    n_mlp_dens: 12
+    n_rad_base: 8
+    charge_hidden_layers: [16]
+    charge_activation: silu
+    charge_normalize: none
+
+fit:
+  # SQUARE, not gracemaker's default huber: ../cpmace-grace/'s controlled
+  # comparison found huber cost 48% on forces (27.07 -> 14.14 meV/A) because at
+  # delta 0.01 nearly every force error sits in its linear regime.
+  #
+  # Weights derived from LOREM's converged errors on THIS dataset
+  # (../razor_centre_paper/ lr: 0.56 meV/atom, 26.90 meV/A, 0.0875 V) to
+  # reproduce cpmace run 4's realised shares:
+  #     3900 : 10 : 0.16  ->  E 12.6% / F 74.7% / W 12.6%
+  # Shares transfer between datasets, weights do not -- hence the re-derivation
+  # rather than reusing cpmace's 500 : 10 : 0.7.
+  loss:
+    energy: { weight: 3900, type: square }
+    forces: { weight: 10, type: square }
+    extra_components:
+      WeightedWorkFunctionLoss: { weight: 0.16, type: square }
+
+  # 4138 train / batch 10 = 413 updates/epoch -> 218 epochs. 1080 atoms/update,
+  # matching cpmace run 4's 1035, and 97M atom-updates against its 103.5M which
+  # ran 2h23m -- so ~2h15m expected.
+  target_total_updates: 90000
+  batch_size: 10
+  test_batch_size: 32
+  train_function: ComputeBatchEnergyForcesCharge
+  compute_function: ComputeStructureEnergyForcesVirialCharge
+
+  optimizer: Adam
+  opt_params: {
+    learning_rate: 0.008,
+    use_ema: True,
+    ema_momentum: 0.99,
+    weight_decay: null,
+    clipnorm: 1.0,
+  }
+  scheduler: cosine_decay
+  scheduler_params: { minimum_learning_rate: 0.00066667 }   # = lr / 12
+
+  jit_compile: True
+  eval_init_stats: True
+  checkpoint_freq: 5
+  progressbar: False
+  train_shuffle: True
+
+  train_max_n_buckets: auto
+  test_max_n_buckets: auto
+  auto_bucket_max_padding: 0.3

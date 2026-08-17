@@ -1,0 +1,85 @@
+seed: 1
+cutoff: 6.0
+
+data:
+  filename: data/train.xyz
+  test_filename: data/valid.xyz
+  reference_energy: auto
+  save_dataset: True
+  extra_components:
+    TotalChargeDataBuilder:
+      fit_work_function: True
+
+potential:
+  preset: GRACE_2LAYER_FILM
+  param_dtype: float32
+  kwargs:
+    lmax: [4, 3]
+    max_order: 4
+    indicator_lmax: 1
+    n_rad_max: [32, 32]
+    prod_func_n_max: [32, 32]
+    n_mlp_dens: 12
+    n_rad_base: 8
+    charge_hidden_layers: [16]
+    charge_activation: silu
+    charge_normalize: none
+
+fit:
+  # SQUARE, not gracemaker's default huber -- see ../cpmace-grace/, where the
+  # controlled comparison found huber cost 48% on forces.
+  #
+  # Weights derived from LOREM's converged errors on THIS dataset
+  # (../natcomm2025/ lr: 0.15 meV/atom, 23.88 meV/A, 0.0699 V) to reproduce
+  # cpmace run 4's realised shares:
+  #     43000 : 10 : 0.2  ->  E 12.7% / F 74.6% / W 12.8%
+  # 43000 looks alarming and is correct. MSE scales as error^2, so at a FIXED
+  # share the energy weight scales as 1/error^2. natcomm's LOREM energy error
+  # (0.150 meV/atom) is 8.3x smaller than cpmace's (1.249), hence 69x smaller
+  # MSE, hence ~69x cpmace's weight of 500. The big number means the energy is
+  # unusually EASY here -- E/atom has a label spread of only 5.55 meV and LOREM
+  # already reaches 0.15, i.e. 37x better than a mean predictor -- not that it
+  # needs more attention. Shares transfer between datasets; weights do not.
+  #
+  # Not degenerate early either: with errors at label-spread scale the shares
+  # start at E 22.2 / F 60.8 / W 17.0 and settle toward the target.
+  #
+  # Arguably 12.6% over-defends an already-excellent target; 10000 : 10 : 0.2
+  # would give ~6% at init and ~3% converged, moving that budget to forces and
+  # the work function. Kept at the cpmace share for comparability.
+  loss:
+    energy: { weight: 43000, type: square }
+    forces: { weight: 10, type: square }
+    extra_components:
+      WeightedWorkFunctionLoss: { weight: 0.2, type: square }
+
+  # 15139 train / batch 4 = 3785 updates/epoch -> only 27 epochs. That is the
+  # right regime for a dataset 15x larger than cpmace's: the same ~100k
+  # gradient updates and ~97M atom-updates, spread over more data and fewer
+  # passes. 932 atoms/update, close to cpmace run 4's 1035.
+  target_total_updates: 104000
+  batch_size: 4
+  test_batch_size: 16
+  train_function: ComputeBatchEnergyForcesCharge
+  compute_function: ComputeStructureEnergyForcesVirialCharge
+
+  optimizer: Adam
+  opt_params: {
+    learning_rate: 0.008,
+    use_ema: True,
+    ema_momentum: 0.99,
+    weight_decay: null,
+    clipnorm: 1.0,
+  }
+  scheduler: cosine_decay
+  scheduler_params: { minimum_learning_rate: 0.00066667 }   # = lr / 12
+
+  jit_compile: True
+  eval_init_stats: True
+  checkpoint_freq: 5
+  progressbar: False
+  train_shuffle: True
+
+  train_max_n_buckets: auto
+  test_max_n_buckets: auto
+  auto_bucket_max_padding: 0.3
