@@ -64,6 +64,24 @@ with TF. No `cuda` module is loaded — `tensorflow[and-cuda]` ships its own.
 
 ## Results
 
+### Headline: best validation result from each model
+
+| | E (meV/atom) | F (meV/Å) | WF / E_F (mV) | wall |
+|---|---|---|---|---|
+| cp-MACE, published (SI Fig S2, node augmentation) | not reported | 16.51 | 40.05 | not reported |
+| LOREM (`../cpmace/sr-grace-like-d128-l3-c32-1000ep`) | **0.561** | 29.33 | 41.4 | 7h39m |
+| **GRACE-2L + FiLM (run 4)** | 0.640 | **14.14** | **33.47** | **2h23m** |
+
+All three columns are held-out validation on the same 1093-structure dataset.
+**GRACE wins forces and the work function**; LOREM keeps energy by 14%, which is
+a loss-weight choice (run 2 reached 0.619), and cp-MACE never reports an energy
+error at all. Wall times are not directly comparable across codebases — cp-MACE
+gives none, and LOREM's best is a larger model run for 1.41× the updates.
+
+Everything below is the supporting detail.
+
+---
+
 Four runs. **Run 4 is the model**: on validation it beats cp-MACE's published
 forces *and* Fermi level, in under a third of LOREM's wall time.
 
