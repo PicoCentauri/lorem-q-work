@@ -44,7 +44,8 @@ No marathon `prepare()` step here: GRACE reads extxyz directly and
 
 ## Loss weights
 
-`gracemaker` defaults for energy (16) and forces (32), plus a work-function
+**Superseded by the Results section below** — these were run 1's weights and
+left the energy at 0.10% of the loss. `gracemaker` defaults for energy (16) and forces (32), plus a work-function
 term at 10. That last number is a **first guess, not a tuned value** — the
 cp-MACE paper uses 1 : 100 : 10 for E : F : WF, which would put the work
 function at roughly a third of the force weight; 10 against 32 is in that
@@ -61,89 +62,96 @@ on the `charge-conditioning` branch). `TF_USE_LEGACY_KERAS=1` is **required**:
 TensorFlow pulls in keras 3.x, and tensorpotential needs the legacy API bundled
 with TF. No `cuda` module is loaded — `tensorflow[and-cuda]` ships its own.
 
-## TODO — do these when run 2 (job 4033556) lands
-
-**Rename `WeightedSSEWorkFunctionLoss` -> `WeightedWorkFunctionLoss`.** No
-deprecated alias; still in development. Rename the class only -- the run
-configs stay frozen (see below).
-
-The name is wrong: GRACE's convention is `Weighted<SHAPE><TARGET>Loss` with the
-loss shape in the name (`WeightedSSEForceLoss` vs `WeightedHuberForceLoss` are
-separate classes, and `type:` picks between them via a dispatch dict). Our class
-takes `type` as a constructor argument instead — correct, because the
-`extra_components` path resolves a class *by name* with no dispatch dict — but
-it means the SSE prefix is a lie the moment `type: huber` is set, which is
-exactly what run 2 does. Its log reads
-`1.0*WeightedSSEWorkFunctionLoss` while the object is running huber at
-delta 0.01. Same category of error as the `d_wf` -> `wf` metric rename.
-
-Rename in **two** files only:
-
-- `grace-tensorpotential/tensorpotential/extra/charge/loss.py` (the class, and
-  its docstring's usage example)
-- `grace-tensorpotential/tensorpotential/extra/extra_losses.py` (import + `__all__`)
-
-**Leave both `input.yaml` files alone** -- `experiments/cpmace-grace/input.yaml`
-(run 1) and `w280-12-1-huber-fp32/input.yaml` (run 2). They are the record of
-what actually ran and stay frozen at the old name.
-
-Consequence, accepted deliberately: with no deprecated alias, those two configs
-will no longer execute as written -- `extra_components` resolves the loss class
-by name, so `WeightedSSEWorkFunctionLoss` will raise `NameError: Could not find
-loss function`. They remain accurate records, not runnable ones. **To re-run
-either config, substitute `WeightedWorkFunctionLoss` in a scratch copy.** Any
-new experiment uses the new name from the start.
-
 ## Results
 
-`GRACE_2LAYER_FILM` small, 323 epochs (20,000 updates), 2h05m on one A100.
-Test split (109 frames), best checkpoint:
+Four runs. **Run 4 is the model**: it beats cp-MACE's published forces and does
+it in under half LOREM's wall time.
 
-| | E (meV/atom) | F (meV/Å) | WF (V) |
-|---|---|---|---|
-| `../cpmace/` LOREM best (`sr` GRACE-like) | **0.561** | 29.33 | 0.0414 |
-| **GRACE-2L + FiLM** | 1.25 | **21.47** | **0.0334** |
-| cp-MACE published | — | **16.5** | 0.03–0.04 |
+| | model | loss | updates | E (meV/atom) | F (meV/Å) | WF (mV) | wall |
+|---|---|---|---|---|---|---|---|
+| run 1 | small | square | 20k | 1.249 | 21.47 | 33.36 | 2h05m |
+| run 2 | small | huber | 100k | **0.619** | 27.07 | 40.48 | 2h23m |
+| run 3 | medium | huber | 60k | 0.630 | 43.31 | 45.37 | 2h40m |
+| **run 4** | small | **square** | 100k | 0.640 | **14.14** | **33.47** | 2h23m |
 
-**Forces improve 27% over LOREM's best** (21.47 vs 29.33 meV/Å), so the
-backbone was a real part of the gap this experiment was built to test. It does
-not close it: cp-MACE's published 16.5 is still 30% ahead. (Their 8.67 comes
-from adding force-only structures we do not have, so it is not a like-for-like
-target.)
+### The huber control settles it: huber was costing 48% on forces
 
-**The work function matches cp-MACE** — 0.0334 V against their 0.03–0.04 eV,
-and 19% better than LOREM's 0.0414.
+Runs 2 and 4 differ in **nothing but the loss shape** — same model, batch,
+budget, dtype, schedule, and weights derived from the same basis to target the
+same shares. This was asserted programmatically when run 4 was built, not
+assumed.
 
-That last number is the one worth keeping. `../cpmace/README.md` flagged the
-risk that "a target that is cheap to fit as an independent head is not
-necessarily cheap to fit as a derivative that must reshape E(q)": cp-MACE's
-Fermi level is a **direct output head** carrying no thermodynamic-consistency
-obligation, ours is `dE/dq` from autograd. On this evidence that constraint
-costs approximately nothing — we match them on the target their architecture
-is free to fit directly. One data point, not a settled result, but it is the
-argument for keeping the derivative formulation, which is what makes
-constant-potential MD well-posed (forces = −∇Ω, with Ω conserved).
-
-### The energy is undertrained, and it is the loss weights
-
-Energy is 2.2x worse than LOREM's (1.25 vs 0.561 meV/atom). Decomposing the
-loss with the reported RMSEs reconstructs the logged total to 0.6%, so the
-shares are trustworthy:
-
-| target | weight | share |
+| | run 2 (huber) | run 4 (square) |
 |---|---|---|
-| energy | 16 | **0.10%** |
-| forces | 32 | 56.9% |
-| work function | 10 | 43.0% |
+| forces | 27.07 | **14.14** (−48%) |
+| work function | 40.48 | **33.47** (−17%) |
 
-**The energy is effectively untrained.** This is the same failure `../cpmace/`
-diagnosed for cp-MACE's own 1:100:10 weights (energy at 0.0001%), reproduced
-here by accident: gracemaker's 16/32 defaults are tuned for plain E/F fitting
-and never anticipated a third target large enough to take 43% of the loss.
+The mechanism is the one the config file predicted: at `delta = 0.01` against
+20–40 meV/Å force errors, nearly every force error sits in huber's **linear**
+regime, which is close to optimising MAE and weakens the gradient on exactly the
+large errors RMSE is made of. **huber is gracemaker's default loss type**, so
+this is a trap anyone fitting forces at this error scale will walk into.
 
-Shares transfer between codes, weights do not. `2000 : 32 : 1` reproduces
-razor's tuned triple on this data (E 16.0 / F 78.2 / W 5.8 against razor's
-16.4 / 78.6 / 5.0) and is the natural next run. Raising the work-function
-share instead costs forces -- razor's sweep found ~1.7x -- and forces are
-currently the only place this model beats LOREM, so that trade should be
-measured rather than assumed.
+Run 3 is consistent with this and adds nothing independent: it was also huber,
+and additionally undertrained (1.83M parameters given 0.6× run 2's updates, with
+train forces ≈ test forces — underfitting, not overfitting).
+
+### Against the published cp-MACE result
+
+| | forces (meV/Å) | work function |
+|---|---|---|
+| cp-MACE published | 16.5 | 30–40 mV |
+| **GRACE-2L + FiLM (run 4)** | **14.14** | **33.5 mV** |
+
+**14% better than published on forces, and inside their work-function band.**
+Their 8.67 meV/Å comes from adding force-only structures we do not have, so it
+is not a like-for-like target.
+
+Worth restating what that means for the architecture question this folder was
+built to answer: our work function is `dE/dq` from autograd, thermodynamically
+consistent by construction, while cp-MACE's Fermi level is a **direct output
+head** carrying no such obligation. `../cpmace/README.md` flagged the risk that a
+target cheap to fit as an independent head need not be cheap to fit as a
+derivative that must reshape E(q). On this evidence it costs nothing.
+
+### Against LOREM on the same dataset
+
+Best GRACE (run 4) against best LOREM (`../cpmace/sr-grace-like-d128-l3-c32-1000ep`):
+
+| | LOREM best | GRACE run 4 | |
+|---|---|---|---|
+| energy (meV/atom) | **0.561** | 0.640 | 1.14× worse |
+| forces (meV/Å) | 29.33 | **14.14** | **2.07× better** |
+| work function (mV) | 41.4 | **33.5** | 1.24× better |
+| wall time | 7h39m | **2h23m** | **3.2× faster** |
+| updates | 141,000 | 100,000 | |
+
+**2.1× better forces in 3.2× less wall time** — about 6.6× on
+accuracy-per-GPU-hour. Energy is the one target LOREM still wins, by 14%, and
+that is a loss-weight choice rather than a capability gap: run 2 reached 0.619
+and run 1 with the energy at 0.10% of the loss reached only 1.249.
+
+Runtime is not like-for-like in the model's favour either — LOREM's best run is a
+larger model (d128 l3 c32) and used 1.41× the gradient updates. Against LOREM's
+*same-size* model (`sr-small-l2c8`, 40.70 meV/Å in 3h47m) run 4 is 2.9× better on
+forces in 63% of the time.
+
+### Still not converged
+
+Every run's best checkpoint has been at or within a few epochs of its **last**,
+including run 4 (181 new-best checkpoints in 508 epochs). A flattening cosine
+tail is the schedule ending, not convergence. LOREM needed 141,000 updates here
+and was still improving; run 4 got 100,000. **The budget is still the binding
+constraint**, so 14.14 meV/Å is a floor, not a limit.
+
+### What to try next
+
+- **More updates at run 4's settings.** The cheapest remaining lever, and the
+  only one with direct evidence behind it.
+- **Medium model with square loss and a proper budget.** Run 3 confounded
+  capacity with huber and a short schedule, so capacity is currently untested.
+- **The work function has stopped responding to loss weight.** Run 1 (43% share)
+  and run 4 (12.6%) both land at ~33.4 mV. Run 3 showed why: train WF 19.4 vs
+  test 45.4 — it overfits on only **984 labels**, one per structure, against
+  610k force components. More WF weight will not help; more WF data or a
+  directional inductive bias would. See `../../notes/dipole-term-plan.md`.
