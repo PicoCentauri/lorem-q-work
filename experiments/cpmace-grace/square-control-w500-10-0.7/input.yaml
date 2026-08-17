@@ -1,0 +1,109 @@
+seed: 1
+cutoff: 6.0
+
+data:
+  # shared with the parent -- ../prepare.py writes these once
+  filename: ../data/train.xyz
+  test_filename: ../data/valid.xyz
+  reference_energy: auto
+  save_dataset: True
+  extra_components:
+    TotalChargeDataBuilder:
+      fit_work_function: True
+
+potential:
+  preset: GRACE_2LAYER_FILM
+  # CHANGED from the first run (was float64). This is gracemaker's own default
+  # (wizard.py:285) and means mixed precision: parameters FP32, geometry FP64.
+  # The first run sat at 79.7/81.9 GB, i.e. 97% of the card, with no headroom
+  # for a larger batch or the BEC forward-over-reverse pass. On an A100, FP64
+  # is 9.7 TFLOPS against FP32's 19.5, and tensorpotential disables TF32, so
+  # expect ~1.3-1.8x -- not a clean 2x, since geometry stays FP64.
+  param_dtype: float32
+  kwargs:
+    lmax: [4, 3]
+    max_order: 4
+    indicator_lmax: 1
+    n_rad_max: [32, 32]
+    prod_func_n_max: [32, 32]
+    n_mlp_dens: 12
+    n_rad_base: 8
+    charge_hidden_layers: [16]
+    charge_activation: silu
+    charge_normalize: none
+
+fit:
+  # SQUARE-LOSS CONTROL for run 2 (../w280-12-1-huber-fp32/). Everything else
+  # -- model, batch, budget, dtype, schedule -- is identical by construction:
+  # this file is a copy of that one with only the loss block changed.
+  #
+  # The question: huber is the common factor in both force regressions. Run 1
+  # (square) reached 21.47 meV/A on forces; runs 2 and 3 (huber) reached 27.07
+  # and 43.31. Run 1 is better on force MAE too (15.2 vs 18.6), so it is not a
+  # metric artifact. The mechanism would be that at delta=0.01 against 20-40
+  # meV/A errors, nearly every force error sits in huber's LINEAR regime, which
+  # is close to optimising MAE and weakens the gradient on exactly the large
+  # errors RMSE is made of. Run 1 also differed in dtype and batch size, so
+  # this control is what isolates the loss shape.
+  #
+  # Weights derived from the SAME basis as run 2's -- run 1's converged errors
+  # -- so the two runs target the same shares under different loss shapes:
+  #     500 : 10 : 0.7  square -> E 12.6% / F 74.7% / W 12.6%
+  #     280 : 12 : 1    huber  -> E 12.3% / F 75.3% / W 12.4%   (run 2)
+  loss:
+    energy: { weight: 500, type: square }
+    forces: { weight: 10, type: square }
+    extra_components:
+      WeightedSSEWorkFunctionLoss: { weight: 0.7, type: square }
+
+  train_function: ComputeBatchEnergyForcesCharge
+  compute_function: ComputeStructureEnergyForcesVirialCharge
+
+  optimizer: Adam
+  opt_params: {
+    learning_rate: 0.008,
+    use_ema: True,
+    ema_momentum: 0.99,
+    weight_decay: null,
+    clipnorm: 1.0,
+  }
+  scheduler: cosine_decay
+  scheduler_params: { minimum_learning_rate: 0.00066667 }   # = lr / 12
+
+  # batch_size and target_total_updates are coupled, so they are set together.
+  # 984 / 5 = 197 updates/epoch, so 100000 updates is 510 epochs -- more data
+  # exposure than run 1's 327, at 1.57x its total atom-updates.
+  #
+  # Budget context. LOREM needed 141,000 updates on this dataset (1000 epochs
+  # at 141 batches/epoch) and was STILL improving on forces at the end: its
+  # last 100-epoch window ran -0.68%. Run 1 here reached 21.47 meV/A in only
+  # 20,000, so GRACE is far more update-efficient -- but run 1's best
+  # checkpoint was its FINAL epoch, meaning it stopped while still improving.
+  # A flattening cosine tail is the schedule ending, not convergence. 100,000
+  # is 71% of LOREM's update count at about half its total compute; if the best
+  # checkpoint is again the last epoch, the budget is still binding.
+  #
+  # Runtime estimate 1.8-3.5 h on an A100, from run 1's measured 113.7 us per
+  # atom-update scaled by 1.57x, then float32 (1.3-1.8x faster) against a
+  # small-batch efficiency penalty at 1035 atoms/batch vs run 1's 3312.
+  #
+  # batch 5 = 1035 atoms/update. Not a power of two, which does not matter:
+  # batch_size counts structures, while the tensor shapes that reach the GPU
+  # come from the padded bucket (total atoms, total neighbours). Every frame is
+  # 207 atoms, so padding is cheap regardless -- run 1 ran +0.84% on atoms.
+  target_total_updates: 100000  # 197 updates/epoch -> 510 epochs
+  batch_size: 5                 # 5 x 207 = 1035 atoms/update
+  # the wizard would use 4*batch_size = 20. Kept at 32: run 1 peaked at 97% of
+  # an 80 GB card at batch 16 / float64, and batch 5 + float32 leaves ample
+  # headroom, while a larger eval batch means fewer eval steps.
+  test_batch_size: 32
+
+  jit_compile: True
+  eval_init_stats: True
+  checkpoint_freq: 5
+  progressbar: False
+  train_shuffle: True
+
+  train_max_n_buckets: auto
+  test_max_n_buckets: auto
+  auto_bucket_max_padding: 0.3
