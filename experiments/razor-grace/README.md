@@ -13,7 +13,7 @@ re-derived.
 |---|---|---|
 | preset | `GRACE_2LAYER_FILM`, small | as cpmace run 4 |
 | loss | **square**, not huber | huber cost 48% on forces in `../cpmace-grace/`'s control |
-| weights E:F:W | **2000 : 10 : 0.15** | E 7.0 / F 80.3 / W 12.7 |
+| weights E:F:W | **2000 : 10 : 0.2** | E 6.7 / F 77.0 / W 16.3 |
 | batch | 10 (1080 atoms/update) | matches cpmace's 1035 atoms/update |
 | budget | 90,000 updates = 218 epochs | 97M atom-updates vs cpmace's 103.5M at 2h23m |
 

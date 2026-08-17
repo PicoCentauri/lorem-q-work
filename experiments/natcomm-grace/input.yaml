@@ -32,7 +32,7 @@ fit:
   # Weights derived from LOREM's converged errors on THIS dataset
   # (../natcomm2025/ lr: 0.15 meV/atom, 23.88 meV/A, 0.0699 V) to reproduce
   # cpmace run 4's realised shares:
-  #     10000 : 10 : 0.2  ->  E 3.3% / F 82.6% / W 14.2%
+  #     10000 : 10 : 0.25  ->  E 3.1% / F 79.8% / W 17.1%
   # 43000 looks alarming and is correct. MSE scales as error^2, so at a FIXED
   # share the energy weight scales as 1/error^2. natcomm's LOREM energy error
   # (0.150 meV/atom) is 8.3x smaller than cpmace's (1.249), hence 69x smaller
@@ -49,12 +49,16 @@ fit:
   # meV/atom. A share also DECAYS as its target improves -- cpmace run 2's
   # energy went 12.3% -> 2.7% over training while still reaching 0.619 -- so a
   # high start mostly spends early budget on something that converges anyway.
-  # The freed budget goes to forces (74.6 -> 82.6%).
+  # The freed budget goes to forces (74.6 -> 82.6%).  #
+  # The work-function share is deliberately above cpmace run 4's 12.6%: GRACE's
+  # forces are already strong there (14.14 meV/A, beating cp-MACE's published
+  # 16.5), so the marginal budget is worth more on the charge response, which is
+  # what these datasets exist to model.
   loss:
     energy: { weight: 10000, type: square }
     forces: { weight: 10, type: square }
     extra_components:
-      WeightedWorkFunctionLoss: { weight: 0.2, type: square }
+      WeightedWorkFunctionLoss: { weight: 0.25, type: square }
 
   # 15139 train / batch 4 = 3785 updates/epoch -> only 27 epochs. That is the
   # right regime for a dataset 15x larger than cpmace's: the same ~100k

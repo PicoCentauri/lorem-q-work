@@ -38,7 +38,7 @@ fit:
   # Weights derived from LOREM's converged errors on THIS dataset
   # (../razor_centre_paper/ lr: 0.56 meV/atom, 26.90 meV/A, 0.0875 V) to
   # reproduce cpmace run 4's realised shares:
-  #     2000 : 10 : 0.15  ->  E 7.0% / F 80.3% / W 12.7%
+  #     2000 : 10 : 0.2   ->  E 6.7% / F 77.0% / W 16.3%
   # Shares transfer between datasets, weights do not -- hence the re-derivation
   # rather than reusing cpmace's 500 : 10 : 0.7.
   #
@@ -47,12 +47,16 @@ fit:
   # its target improves -- cpmace run 2's energy was designed at 12.3% and had
   # fallen to 2.7% by convergence, still reaching 0.619 meV/atom. Starting high
   # mostly spends early budget defending a target that converges anyway, so the
-  # freed budget goes to forces (74.7 -> 80.3%), which is the harder target.
+  # freed budget goes to forces (74.7 -> 80.3%), which is the harder target.  #
+  # The work-function share is deliberately above cpmace run 4's 12.6%: GRACE's
+  # forces are already strong there (14.14 meV/A, beating cp-MACE's published
+  # 16.5), so the marginal budget is worth more on the charge response, which is
+  # what these datasets exist to model.
   loss:
     energy: { weight: 2000, type: square }
     forces: { weight: 10, type: square }
     extra_components:
-      WeightedWorkFunctionLoss: { weight: 0.15, type: square }
+      WeightedWorkFunctionLoss: { weight: 0.2, type: square }
 
   # 4138 train / batch 10 = 413 updates/epoch -> 218 epochs. 1080 atoms/update,
   # matching cpmace run 4's 1035, and 97M atom-updates against its 103.5M which
