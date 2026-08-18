@@ -130,6 +130,24 @@ Run 3 is consistent with this and adds nothing independent: it was also huber,
 and additionally undertrained (1.83M parameters given 0.6× run 2's updates, with
 train forces ≈ test forces — underfitting, not overfitting).
 
+### Note: two padded-atom bugs found after the fact
+
+`evaluate.py` numbers are 0.637 / 14.15 / **0.0332** — slightly better on the
+work function than the 0.0335 quoted above, because two upstream bugs were found
+and fixed while evaluating `../razor-grace/` and `../natcomm-grace/`:
+
+1. the single-structure compute function summed `e_atomic` over **all** entries,
+   and a padded atom carries its species' isolated-atom energy;
+2. `dE/dq` was differentiated from that same unmasked `e_atomic`, and padded
+   atoms gather the *real* structure's charge, so FiLM gave them a β(q) — worth
+   **0.110 V** on natcomm.
+
+Both are present in the stock `ComputeStructureEnergyAndForcesAndVirial`, so any
+GRACE model driven through `TPCalculator` is affected. Fixed in our compute
+function; models must be re-exported (`final_model_fixed`) for it to take
+effect. The batched training path was never affected — it routes padded atoms to
+a dummy structure — which is why the training metrics were right throughout.
+
 ### Against the published cp-MACE result
 
 Numbers read out of `../../datasets/cpmace/ct5c00784.pdf` and its SI. **The

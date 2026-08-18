@@ -55,4 +55,26 @@ this run is the counterpart of LOREM's `sr` / `lr`, not of `sr-bec`.
 
 ## Results
 
-Not yet run.
+90,000 updates (218 epochs), 2h11m. `evaluate.py` on the saved model; all three
+quantities reproduce the training log exactly.
+
+| split | E (meV/atom) | F (meV/Å) | WF (V) | n |
+|---|---|---|---|---|
+| valid | 0.501 | 20.48 | 0.0851 | 460 |
+| **test** (publication's own) | **0.482** | **20.05** | **0.0874** | 515 |
+
+Against `../razor_centre_paper/` (LOREM) on the same 515-frame test set:
+
+| | E | F | WF |
+|---|---|---|---|
+| LOREM `sr` | 0.59 | 29.67 | 0.1239 |
+| LOREM `lr` | 0.56 | 26.90 | 0.0875 |
+| LOREM `sr-bec` | 0.60 | 30.69 | **0.0845** |
+| **GRACE + FiLM** | **0.482** | **20.05** | 0.0874 |
+
+**25% better forces and 14% better energy than LOREM's best**, and it matches
+`lr`'s work function (0.0874 vs 0.0875) while being short-range, where `lr` has
+an Ewald head. Only `sr-bec` is better on WF (0.0845), and that run supervises
+`bec_z`, which GRACE cannot yet do — see `../../notes/dipole-term-plan.md`.
+
+valid and test agree closely (0.501/0.482, 20.48/20.05), so the split is clean.

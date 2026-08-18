@@ -63,4 +63,20 @@ is ever added, this dataset's slab normal is **x**, not z.
 
 ## Results
 
-Not yet run.
+104,000 updates (28 epochs), 2h18m. `evaluate.py` on the saved model; all three
+quantities reproduce the training log exactly.
+
+| | E (meV/atom) | F (meV/Å) | WF (V) |
+|---|---|---|---|
+| LOREM `sr` | 0.25 | 26.73 | 0.0912 |
+| LOREM `lr` | **0.15** | 23.88 | **0.0699** |
+| **GRACE + FiLM** | 0.213 | **22.96** | 0.0785 |
+
+A much narrower result than razor's: forces only **4% better** than `lr`, and
+worse on energy (42%) and work function (12%). Two likely reasons, the first
+probably dominant — it got only **28 epochs**, since the ~97M atom-update budget
+that gave cpmace 508 passes gives 28 on a dataset 15× larger; and `lr`'s Ewald
+head keeps being the thing that helps the work function.
+
+Beats LOREM's short-range `sr` on all three, so the gap is against the
+long-range model specifically.

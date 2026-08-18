@@ -11,10 +11,10 @@ Quantities:
   - forces (meV/A, all Cartesian components)
   - work function (V), the model's autograd dE/dq against -potential
 
-cpmace has no `polarizable` flag and no bec_z labels, so every panel is
+razor_centre_paper has no `polarizable` flag and no bec_z labels, so every panel is
 single-coloured and there is no fourth column.
 
-    python evaluate.py            # from experiments/cpmace-grace/
+    python evaluate.py            # from experiments/razor-grace/
 """
 
 import ast
@@ -34,14 +34,19 @@ from ase.io import read
 # The run to plot, and the row label. A list so a second run can be stacked
 # the way ../cpmace/ stacks its variants; run 4 alone is the "best model"
 # figure, which is what this was written for.
-VARIANTS = ["square-control-w500-10-0.7"]
-LABELS = {
-    "square-control-w500-10-0.7": "GRACE-2L + FiLM\nsmall, square, 100k",
-}
-COLORS = {"square-control-w500-10-0.7": "steelblue"}
+VARIANTS = ["."]
+LABELS = {".": "GRACE-2L + FiLM\nsmall, square, 90k"}
+COLORS = {".": "steelblue"}
 
 DATA = "data"
-SPLIT = "valid"
+# Both the 460-frame carve-out AND the publication's own 515-frame test set.
+# The latter is what ../razor_centre_paper/ reports against, so it is the split
+# that compares to the published numbers.
+SPLITS = ["valid", "test"]
+
+# razor names the charge `bias_charge`; the model reads it via the builder's
+# charge_key, and the RMSE-vs-charge axis needs the same key.
+CHARGE_KEY = "bias_charge"
 
 # Points drawn in the force parity scatter; RMSE is always over all of them.
 # ~68k components would make an unopenable PDF.
@@ -68,7 +73,7 @@ def atomic_shift(variant):
     Parsed from the run's own log rather than hardcoded, so it stays correct if
     the model is retrained on different data.
     """
-    log = Path(variant) / "seed" / "1" / "log.txt"
+    log = Path(variant) / "seed" / "1" / "log.txt"   # variant "." = this dir
     marker = "single-atom energies (eV):"
     for line in log.read_text().splitlines():
         if marker in line:
@@ -79,7 +84,7 @@ def atomic_shift(variant):
     )
 
 
-def predict(variant, frames):
+def predict(variant, frames, split):
     """Energy, forces and dE/dq for every frame, via the saved GRACE model."""
     from tensorpotential import constants
     from tensorpotential.calculator import TPCalculator
@@ -99,6 +104,14 @@ def predict(variant, frames):
     rows = []
     for i, atoms in enumerate(frames):
         a = atoms.copy()
+        # The ASE calculator builds its own TotalChargeDataBuilder with DEFAULT
+        # arguments, so it reads `total_charge` regardless of the charge_key the
+        # model was TRAINED with -- and a missing key silently becomes 0.0. On
+        # razor, whose charge is `bias_charge`, that evaluated every frame at
+        # zero charge and gave a work-function RMSE of 3.95 V against the
+        # training log's 0.0856. Write the key the calculator will look for.
+        # (No-op where CHARGE_KEY is already `total_charge`.)
+        a.info["total_charge"] = float(atoms.info[CHARGE_KEY])
         a.calc = calc
         # ASE's check_state ignores atoms.info, so a structure differing from
         # its predecessor only in total_charge would silently return a cached
@@ -127,13 +140,14 @@ def predict(variant, frames):
         rows.append(
             dict(
                 variant=variant,
+                split=split,
                 e_pred=e / len(a),
                 e_ref=atoms.get_potential_energy() / len(a),
                 f_pred=f.ravel().tolist(),
                 f_ref=atoms.get_forces().ravel().tolist(),
                 wf_pred=wf,
                 wf_ref=float(atoms.info["work_function"]),
-                q=float(atoms.info["total_charge"]),
+                q=float(atoms.info[CHARGE_KEY]),
             )
         )
         if (i + 1) % 25 == 0:
@@ -167,24 +181,29 @@ def collect(rows):
         "f_pred": np.concatenate([r["f_pred"] for r in rows]) * 1000,
         "q": np.array([r["q"] for r in rows]),
     }
-    # cpmace has no polarizable flag; the plotters accept None for it
+    # razor_centre_paper has no polarizable flag; the plotters accept None for it
     for k in ("e", "f", "wf"):
         out[f"{k}_polarizable"] = None
     return out
 
 
+def _rows(all_rows, split):
+    return [r for r in all_rows if r["split"] == split]
+
+
 def print_table(all_rows):
     print("\nE in meV/atom, F in meV/A, WF (dE/dq) in V")
-    print(f"{'variant':<34}{'E RMSE':>9}{'E MAE':>9}{'F RMSE':>9}{'F MAE':>9}"
+    print(f"{'split':<8}{'variant':<26}{'E RMSE':>9}{'E MAE':>9}{'F RMSE':>9}{'F MAE':>9}"
           f"{'WF RMSE':>10}{'WF MAE':>9}{'n':>6}")
     print("-" * 95)
-    for v in VARIANTS:
-        rows = [r for r in all_rows if r["variant"] == v]
+    for split in SPLITS:
+      for v in VARIANTS:
+        rows = [r for r in _rows(all_rows, split) if r["variant"] == v]
         if not rows:
             continue
         d = collect(rows)
         print(
-            f"{v:<34}{rmse(d['e_pred'], d['e_ref']):>9.3f}"
+            f"{split:<8}{v:<26}{rmse(d['e_pred'], d['e_ref']):>9.3f}"
             f"{mae(d['e_pred'], d['e_ref']):>9.3f}"
             f"{rmse(d['f_pred'], d['f_ref']):>9.2f}"
             f"{mae(d['f_pred'], d['f_ref']):>9.2f}"
@@ -228,7 +247,7 @@ MIN_BIN_N = 20
 
 
 @mpltex.acs_decorator
-def plot_split(all_rows, name):
+def plot_split(all_rows, split, name):
     plt.rcParams["text.usetex"] = False
 
     quantities = [
@@ -245,7 +264,7 @@ def plot_split(all_rows, name):
 
     per_variant = {}
     for v in VARIANTS:
-        rows = [r for r in all_rows if r["variant"] == v]
+        rows = [r for r in _rows(all_rows, split) if r["variant"] == v]
         if rows:
             per_variant[v] = collect(rows)
 
@@ -280,7 +299,7 @@ def plot_split(all_rows, name):
             fontweight="bold", linespacing=1.4,
         )
 
-    fig.suptitle(f"cpmace-grace -- {SPLIT}")
+    fig.suptitle(f"razor-grace -- {split}")
     Path("figures").mkdir(exist_ok=True)
     fig.savefig(Path("figures") / name, transparent=True, bbox_inches="tight")
     plt.close(fig)
@@ -288,7 +307,7 @@ def plot_split(all_rows, name):
 
 
 @mpltex.acs_decorator
-def plot_rmse_vs_charge(all_rows, name):
+def plot_rmse_vs_charge(all_rows, split, name):
     """RMSE per target resolved by total charge.
 
     cpmace's charges are continuous (the electron count is a constant-potential
@@ -301,7 +320,7 @@ def plot_rmse_vs_charge(all_rows, name):
     quantities = [("e", "energy", "meV/atom"), ("f", "force", "meV/Å"),
                   ("wf", "work function", "V")]
 
-    q_all = np.array([r["q"] for r in all_rows])
+    q_all = np.array([r["q"] for r in _rows(all_rows, split)])
     edges = np.arange(
         np.floor(q_all.min() / CHARGE_BIN_WIDTH) * CHARGE_BIN_WIDTH,
         q_all.max() + CHARGE_BIN_WIDTH, CHARGE_BIN_WIDTH,
@@ -315,7 +334,7 @@ def plot_rmse_vs_charge(all_rows, name):
     fig.set_figheight(1.0 * len(VARIANTS) * fig.get_figwidth() / len(quantities))
 
     for row, v in enumerate(VARIANTS):
-        rows = [r for r in all_rows if r["variant"] == v]
+        rows = [r for r in _rows(all_rows, split) if r["variant"] == v]
         if not rows:
             continue
         for col, (key, label, unit) in enumerate(quantities):
@@ -346,7 +365,7 @@ def plot_rmse_vs_charge(all_rows, name):
         )
 
     hatched = f"hatched: n < {MIN_BIN_N}"
-    fig.suptitle(f"cpmace-grace -- {SPLIT} -- RMSE vs charge ({hatched})")
+    fig.suptitle(f"razor-grace -- {split} -- RMSE vs charge ({hatched})")
     Path("figures").mkdir(exist_ok=True)
     fig.savefig(Path("figures") / name, transparent=True, bbox_inches="tight")
     plt.close(fig)
@@ -358,18 +377,19 @@ def main():
         print(f"loading cached rows from {ROWS_CACHE}")
         all_rows = json.loads(ROWS_CACHE.read_text())
     else:
-        frames = read(f"{DATA}/{SPLIT}.xyz", index=":")
-        print(f"=== {SPLIT}: {len(frames)} structures ===", flush=True)
         all_rows = []
-        for v in VARIANTS:
-            print(f"--- {v} ---", flush=True)
-            all_rows.extend(predict(v, frames))
+        for split in SPLITS:
+            frames = read(f"{DATA}/{split}.xyz", index=":")
+            print(f"=== {split}: {len(frames)} structures ===", flush=True)
+            for v in VARIANTS:
+                all_rows.extend(predict(v, frames, split))
         ROWS_CACHE.write_text(json.dumps(all_rows))
         print(f"cached rows to {ROWS_CACHE}")
 
     print_table(all_rows)
-    plot_split(all_rows, f"parity_{SPLIT}.pdf")
-    plot_rmse_vs_charge(all_rows, f"rmse_vs_charge_{SPLIT}.pdf")
+    for split in SPLITS:
+        plot_split(all_rows, split, f"parity_{split}.pdf")
+        plot_rmse_vs_charge(all_rows, split, f"rmse_vs_charge_{split}.pdf")
 
 
 if __name__ == "__main__":
